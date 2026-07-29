@@ -1,0 +1,37 @@
+# Active translation backend. Switch with:
+#   - edit provider = "…" below
+#   - env TRANSLATE_PROVIDER=…
+#   - CLI  --provider …
+#   - the popup provider dropdown
+#
+# API keys live in config/secrets.toml (gitignored) or the env vars
+# named by each provider's api_key_env.
+
+[app]
+provider = "ollama"
+
+# ── local ────────────────────────────────────────────────────────────────────
+[providers.ollama]
+type = "ollama"
+label = "Ollama"
+# Host only — /api/generate is appended by the client.
+base_url = "http://mario:11434"
+model = "qwen2.5:3b"
+
+# ── BYOK (OpenAI-compatible chat completions) ────────────────────────────────
+# Uncomment / copy blocks for any OpenAI-compatible endpoint
+# (OpenAI, DeepSeek, Groq, OpenRouter, local llama.cpp server, …).
+
+[providers.openai]
+type = "openai"
+label = "OpenAI"
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
+api_key_env = "OPENAI_API_KEY"
+
+[providers.deepseek]
+type = "openai"
+label = "DeepSeek"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+api_key_env = "DEEPSEEK_API_KEY"

@@ -39,15 +39,6 @@
     padding: 10px 20px 0 20px;
 }
 
-.lang-dropdown {
-    min-width: 108px;
-    background-color: rgba(255, 255, 255, 0.06);
-    border-radius: 10px;
-    color: #ccc;
-    font-size: 13px;
-    padding: 2px 4px;
-}
-
 .swap-btn {
     background: none;
     border: none;
@@ -64,12 +55,6 @@
     color: #ddd;
 }
 
-.pair-hint {
-    color: #555;
-    font-size: 12px;
-    letter-spacing: 0.4px;
-}
-
 /* ── body ───────────────────────────────────────────────── */
 .body {
     padding: 14px 20px;
@@ -82,11 +67,45 @@
     margin-bottom: 6px;
 }
 
-/* ── source text (original / OCR) ───────────────────────── */
+/* ── source text (original / OCR, editable) ─────────────── */
 .source-text {
     color: #999;
     font-size: 15px;
     line-height: 1.6;
+}
+
+/* TextView paints its own background; keep it flush with the card */
+textview.editable-text,
+textview.editable-text > text {
+    background: none;
+    background-color: transparent;
+    color: #b5b5b5;
+    caret-color: #d0d0d0;
+}
+
+textview.editable-text:focus-within > text,
+textview.editable-text > text:selected {
+    color: #d8d8d8;
+}
+
+/* ── copy button (bottom-right of each text box) ────────── */
+.copy-btn {
+    background-color: rgba(255, 255, 255, 0.10);
+    border: none;
+    color: #d0d0d0;
+    font-size: 13px;
+    border-radius: 8px;
+    min-width: 26px;
+    min-height: 26px;
+    padding: 0;
+    margin: 2px 4px;
+    opacity: 0.5;
+}
+
+.copy-btn:hover {
+    background-color: rgba(255, 255, 255, 0.20);
+    color: #ffffff;
+    opacity: 1;
 }
 
 /* ── separator ──────────────────────────────────────────── */
@@ -108,7 +127,71 @@
     padding: 10px 20px 14px 20px;
 }
 
-.footer label {
-    color: #444;
+.footer label,
+.footer-meta {
+    color: #9a9a9a;
     font-size: 12px;
+}
+
+.footer-meta {
+    color: #b0b0b0;
+    letter-spacing: 0.3px;
+}
+
+/* GTK4 DropDown: color must hit the inner button/label nodes */
+dropdown.provider-dropdown > button {
+    min-width: 180px;
+    min-height: 30px;
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 4px 10px;
+    color: #f0f0f0;
+}
+
+dropdown.provider-dropdown > button:hover {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+dropdown.provider-dropdown > button label {
+    color: #f0f0f0;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+dropdown.provider-dropdown > button arrow {
+    color: #c8c8c8;
+}
+
+/* Same treatment for language dropdowns */
+dropdown.lang-dropdown > button {
+    min-width: 108px;
+    min-height: 30px;
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 4px 8px;
+    color: #f0f0f0;
+}
+
+dropdown.lang-dropdown > button:hover {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+dropdown.lang-dropdown > button label {
+    color: #f0f0f0;
+    font-size: 13px;
+}
+
+dropdown.lang-dropdown > button arrow {
+    color: #c8c8c8;
+}
+
+/* Popover list opened by either dropdown */
+popover contents listview row label {
+    color: #e8e8e8;
+    font-size: 13px;
+}
+
+popover contents listview row:selected label,
+popover contents listview row:hover label {
+    color: #ffffff;
 }
