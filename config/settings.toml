@@ -15,7 +15,7 @@ provider = "ollama"
 type = "ollama"
 label = "Ollama"
 # Host only — /api/generate is appended by the client.
-base_url = "http://mario:11434"
+base_url = "http://127.0.0.1:11434"
 model = "qwen2.5:3b"
 
 # ── BYOK (OpenAI-compatible chat completions) ────────────────────────────────

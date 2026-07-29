@@ -141,7 +141,7 @@ def load_config(settings_path: Path | None = None) -> AppConfig:
             type="ollama",
             label="Ollama",
             base_url=os.environ.get(
-                "TRANSLATE_OLLAMA_URL", "http://mario:11434"
+                "TRANSLATE_OLLAMA_URL", "http://127.0.0.1:11434"
             )
             .removesuffix("/api/generate")
             .rstrip("/"),
