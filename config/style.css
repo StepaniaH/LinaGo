@@ -34,6 +34,42 @@
     color: #ccc;
 }
 
+/* ── language bar (Bob-style pair picker) ────────────────── */
+.lang-bar {
+    padding: 10px 20px 0 20px;
+}
+
+.lang-dropdown {
+    min-width: 108px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    color: #ccc;
+    font-size: 13px;
+    padding: 2px 4px;
+}
+
+.swap-btn {
+    background: none;
+    border: none;
+    color: #777;
+    font-size: 16px;
+    border-radius: 8px;
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0;
+}
+
+.swap-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ddd;
+}
+
+.pair-hint {
+    color: #555;
+    font-size: 12px;
+    letter-spacing: 0.4px;
+}
+
 /* ── body ───────────────────────────────────────────────── */
 .body {
     padding: 14px 20px;
