@@ -1,0 +1,78 @@
+.card {
+    background-color: rgba(30, 30, 30, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    min-width: 440px;
+    padding: 0;
+}
+
+/* ── header ─────────────────────────────────────────────── */
+.header {
+    padding: 16px 20px 0 20px;
+}
+
+.title {
+    color: #888;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 20px;
+    padding: 0 4px;
+    border-radius: 8px;
+    min-width: 34px;
+    min-height: 34px;
+}
+
+.close-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ccc;
+}
+
+/* ── body ───────────────────────────────────────────────── */
+.body {
+    padding: 14px 20px;
+}
+
+.section-label {
+    color: #666;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+/* ── source text (original / OCR) ───────────────────────── */
+.source-text {
+    color: #999;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+/* ── separator ──────────────────────────────────────────── */
+.separator {
+    margin: 12px 0;
+    opacity: 0.08;
+}
+
+/* ── translation result ─────────────────────────────────── */
+.translation-text {
+    color: #e0e0e0;
+    font-size: 17px;
+    line-height: 1.7;
+    margin-top: 4px;
+}
+
+/* ── footer ─────────────────────────────────────────────── */
+.footer {
+    padding: 10px 20px 14px 20px;
+}
+
+.footer label {
+    color: #444;
+    font-size: 12px;
+}
