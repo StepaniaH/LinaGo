@@ -22,7 +22,7 @@ SUPPORTED_TYPES = ("ollama", "openai")
 @dataclass(frozen=True)
 class Provider:
     name: str
-    type: str          # "ollama" | "openai"
+    type: str  # "ollama" | "openai"
     label: str
     base_url: str
     model: str
@@ -62,9 +62,9 @@ TESSERACT_DEFAULT_LANGS = "chi_sim+eng"
 
 @dataclass(frozen=True)
 class OcrSettings:
-    engine: str = "tesseract"          # "tesseract" | "vision"
+    engine: str = "tesseract"  # "tesseract" | "vision"
     tesseract_langs: str = TESSERACT_DEFAULT_LANGS
-    provider: str | None = None        # used when engine == "vision"
+    provider: str | None = None  # used when engine == "vision"
 
 
 def _read_toml(path: Path | None) -> dict:
@@ -189,10 +189,7 @@ def load_ocr_settings(settings: dict) -> OcrSettings:
     engine = str(table.get("engine", "tesseract")).strip().lower()
     if engine not in ("tesseract", "vision"):
         engine = "tesseract"
-    langs = (
-        str(table.get("tesseract_langs", "")).strip()
-        or TESSERACT_DEFAULT_LANGS
-    )
+    langs = str(table.get("tesseract_langs", "")).strip() or TESSERACT_DEFAULT_LANGS
     provider = str(table.get("provider", "")).strip() or None
     return OcrSettings(engine=engine, tesseract_langs=langs, provider=provider)
 

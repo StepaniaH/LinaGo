@@ -70,11 +70,11 @@ def opposite_lang(code: str) -> str:
 
 @dataclass(frozen=True)
 class LangPair:
-    source: str          # resolved concrete code (never auto)
-    target: str          # resolved concrete code (never auto)
-    detected: str        # detect_lang() result
-    source_choice: str   # user selection (may be auto)
-    target_choice: str   # user selection (may be auto)
+    source: str  # resolved concrete code (never auto)
+    target: str  # resolved concrete code (never auto)
+    detected: str  # detect_lang() result
+    source_choice: str  # user selection (may be auto)
+    target_choice: str  # user selection (may be auto)
 
 
 def resolve_pair(text: str, source_choice: str, target_choice: str) -> LangPair:
@@ -123,6 +123,5 @@ def build_prompt(text: str, pair: LangPair, template: str | None = None) -> str:
     return (
         "You are a professional translator. Translate the following text "
         f"from {src} to {tgt}. Output ONLY the translation, nothing else — "
-        "no explanations, no notes, no quotation marks.\n\n"
-        + text
+        "no explanations, no notes, no quotation marks.\n\n" + text
     )

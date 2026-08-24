@@ -114,12 +114,12 @@ def default_chrome_h(translate: bool) -> int:
 
 @dataclass(frozen=True)
 class Placement:
-    horizontal: str     # "right" | "left" — which side of the cursor we grow
-    vertical: str       # "below" | "above" — which side of the cursor we grow
-    left_margin: int    # monitor-local margins for layer-shell anchors
-    top_margin: int     # meaningful when vertical == "below"
+    horizontal: str  # "right" | "left" — which side of the cursor we grow
+    vertical: str  # "below" | "above" — which side of the cursor we grow
+    left_margin: int  # monitor-local margins for layer-shell anchors
+    top_margin: int  # meaningful when vertical == "below"
     bottom_margin: int  # meaningful when vertical == "above"
-    avail_h: int        # usable vertical space in the chosen direction
+    avail_h: int  # usable vertical space in the chosen direction
 
 
 def compute_placement(

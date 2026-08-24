@@ -34,16 +34,21 @@ def check_dependencies(*, need_capture: bool, need_tesseract: bool) -> None:
 
     hyprctl is soft: without it the popup falls back to a fixed corner.
     """
-    missing: list[str] = []
+    wanted: list[str] = []
     if need_capture:
-        missing += REQUIRED_BINS["capture"]
+        wanted += REQUIRED_BINS["capture"]
     if need_tesseract:
-        missing += REQUIRED_BINS["tesseract"]
+        wanted += REQUIRED_BINS["tesseract"]
+
     seen: set[str] = set()
-    unique = [b for b in missing if not (b in seen or seen.add(b))]
-    if unique:
+    missing: list[str] = []
+    for binary in wanted:
+        if binary not in seen and shutil.which(binary) is None:
+            seen.add(binary)
+            missing.append(binary)
+    if missing:
         print(
-            "缺少依赖命令: " + ", ".join(unique) + "\n"
+            "缺少依赖命令: " + ", ".join(missing) + "\n"
             "请安装对应包后再运行（Arch 示例: grim slurp tesseract "
             "tesseract-data-chi_sim tesseract-data-eng）。",
             file=sys.stderr,

@@ -10,14 +10,14 @@ from __future__ import annotations
 import shutil
 import subprocess
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Gtk, Gtk4LayerShell, GLib, Gdk  # noqa: E402
+from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell  # noqa: E402
 
 from linago.backends import stream_completion  # noqa: E402
 from linago.config import AppConfig  # noqa: E402
@@ -292,9 +292,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
     def _setup_layer_shell(self):
         Gtk4LayerShell.init_for_window(self)
         Gtk4LayerShell.set_layer(self, Gtk4LayerShell.Layer.OVERLAY)
-        Gtk4LayerShell.set_keyboard_mode(
-            self, Gtk4LayerShell.KeyboardMode.EXCLUSIVE
-        )
+        Gtk4LayerShell.set_keyboard_mode(self, Gtk4LayerShell.KeyboardMode.EXCLUSIVE)
 
         try:
             pos = get_cursor_position()
@@ -313,15 +311,13 @@ class TranslateWindow(Gtk.ApplicationWindow):
                     self, Gtk4LayerShell.Edge.TOP, placement.top_margin
                 )
             else:
-                Gtk4LayerShell.set_anchor(
-                    self, Gtk4LayerShell.Edge.BOTTOM, True
-                )
+                Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.BOTTOM, True)
                 Gtk4LayerShell.set_margin(
                     self, Gtk4LayerShell.Edge.BOTTOM, placement.bottom_margin
                 )
 
-            self._source_max_h, self._translation_max_h = (
-                compute_section_caps(placement.avail_h, self._translate)
+            self._source_max_h, self._translation_max_h = compute_section_caps(
+                placement.avail_h, self._translate
             )
         except Exception:
             Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.TOP, True)
@@ -394,9 +390,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
             editable=True,
         )
         if self._source_section.buffer is not None:
-            self._source_section.buffer.connect(
-                "changed", self._on_source_changed
-            )
+            self._source_section.buffer.connect("changed", self._on_source_changed)
         source_keys = Gtk.EventControllerKey()
         source_keys.connect("key-pressed", self._on_source_key_pressed)
         self._source_section.view.add_controller(source_keys)
@@ -425,9 +419,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
             store = Gtk.StringList.new(labels)
             self._provider_dropdown = Gtk.DropDown.new(store, None)
             try:
-                self._provider_dropdown.set_selected(
-                    names.index(self._provider_name)
-                )
+                self._provider_dropdown.set_selected(names.index(self._provider_name))
             except ValueError:
                 self._provider_dropdown.set_selected(0)
                 self._provider_name = names[0]
@@ -489,9 +481,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         if self._source_section:
             src_name = LANGUAGES[pair.source]["label"]
             if pair.source_choice == "auto":
-                self._source_section.set_section_label(
-                    f"原文 · {src_name}（自动）"
-                )
+                self._source_section.set_section_label(f"原文 · {src_name}（自动）")
             else:
                 self._source_section.set_section_label(f"原文 · {src_name}")
         if self._translation_section:
@@ -546,12 +536,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         # Bob-style: swap concrete sides. If a side was auto, pin it to the
         # previously resolved language so the swap is meaningful.
         pair = self._current_pair()
-        new_from = (
-            pair.target if self._from_lang == "auto" else self._to_lang
-        )
-        new_to = (
-            pair.source if self._to_lang == "auto" else self._from_lang
-        )
+        new_from = pair.target if self._from_lang == "auto" else self._to_lang
+        new_to = pair.source if self._to_lang == "auto" else self._from_lang
         if self._from_lang != "auto" and self._to_lang != "auto":
             new_from, new_to = self._to_lang, self._from_lang
 
@@ -561,13 +547,9 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._updating_lang_ui = True
         try:
             if self._from_dropdown is not None:
-                self._from_dropdown.set_selected(
-                    SOURCE_CHOICES.index(self._from_lang)
-                )
+                self._from_dropdown.set_selected(SOURCE_CHOICES.index(self._from_lang))
             if self._to_dropdown is not None:
-                self._to_dropdown.set_selected(
-                    TARGET_CHOICES.index(self._to_lang)
-                )
+                self._to_dropdown.set_selected(TARGET_CHOICES.index(self._to_lang))
         finally:
             self._updating_lang_ui = False
 
