@@ -32,6 +32,7 @@ from linago.lang import (  # noqa: E402
     opposite_lang,
     resolve_pair,
 )
+from linago.ocr import forward_to_translation  # noqa: E402
 from linago.placement import (  # noqa: E402
     active_monitor,
     compute_placement,
@@ -641,21 +642,28 @@ class TranslateWindow(Gtk.ApplicationWindow):
     def _on_ocr_done(self, text):
         if self._closed:
             return
+        usable = forward_to_translation(text)
         if text is None:
-            text = "[OCR 失败]"
+            display = "[OCR 失败]"
         elif not text:
-            text = "（未识别到文字）"
-        self._source_text = text
+            display = "（未识别到文字）"
+        else:
+            display = text
+        self._source_text = display
         self._pending_png = None
         if self._source_section:
             self._updating_source_ui = True
             try:
-                self._source_section.set_text(text)
+                self._source_section.set_text(display)
             finally:
                 self._updating_source_ui = False
         self._refresh_pair_labels()
-        if self._translate:
+        if not self._translate:
+            return
+        if usable:
             self._start_translation()
+        elif self._translation_section:
+            self._translation_section.set_text("—")
 
     def _restart_translation(self):
         self._cancel.set()

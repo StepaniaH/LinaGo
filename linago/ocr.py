@@ -46,3 +46,13 @@ def run_tesseract(png: Path, langs: str = TESSERACT_LANGS_DEFAULT) -> str | None
 
     png.unlink(missing_ok=True)
     return normalize_text(result)
+
+
+def forward_to_translation(text: str | None) -> bool:
+    """Whether OCR output may be sent to the translator.
+
+    Failures (None) and empty captures must never reach the provider;
+    translating an error placeholder wastes a request and produces
+    noise. The popup still shows what happened in the source pane.
+    """
+    return bool(text and text.strip())

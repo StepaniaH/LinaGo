@@ -54,3 +54,15 @@ def test_custom_language_pair_is_passed_through(monkeypatch, tmp_path):
     monkeypatch.setattr(ocr.subprocess, "check_output", fake_check_output)
     ocr.run_tesseract(_make_png(tmp_path), langs="eng+chi_sim")
     assert "eng+chi_sim" in seen["argv"]
+
+
+class TestForwardPolicy:
+    def test_failure_is_never_translated(self):
+        assert ocr.forward_to_translation(None) is False
+
+    def test_empty_capture_is_never_translated(self):
+        assert ocr.forward_to_translation("") is False
+        assert ocr.forward_to_translation("   ") is False
+
+    def test_recognized_text_is_forwarded(self):
+        assert ocr.forward_to_translation("hello") is True
