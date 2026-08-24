@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 import requests
 
 TokenCallback = Callable[[str], None]
+
+# Instruction used when a multimodal model does the OCR step.
+TRANSCRIBE_PROMPT = (
+    "Transcribe ALL text visible in this image exactly as written, "
+    "preserving the original reading order and line breaks. "
+    "Output only the transcription, no commentary."
+)
 
 
 def stream_completion(
@@ -116,3 +125,78 @@ def _stream_openai(provider, prompt, on_token, cancel, timeout):
             _emit_coalesced(on_token, full, state, force=bool(finish))
     if full and not cancel.is_set():
         on_token(full)
+
+
+# ── vision OCR ───────────────────────────────────────────────────────────────
+def vision_ocr(provider, image_path: str | Path, *, timeout: int = 180) -> str | None:
+    """Transcribe a screenshot with a multimodal model.
+
+    Returns the transcription, "" when the model returned nothing, or
+    None on any transport/response failure. Callers treat None as OCR
+    failure and empty as "nothing recognized".
+    """
+    provider.require_ready()
+    try:
+        encoded = base64.b64encode(Path(image_path).read_bytes()).decode()
+        if provider.type == "ollama":
+            return _vision_ollama(provider, encoded, timeout)
+        if provider.type == "openai":
+            return _vision_openai(provider, encoded, timeout)
+        raise RuntimeError(f"unsupported provider type: {provider.type}")
+    except (
+        requests.RequestException,
+        OSError,
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+
+def _vision_openai(provider, image_b64: str, timeout: int) -> str:
+    url = f"{provider.base_url}/chat/completions"
+    resp = requests.post(
+        url,
+        headers={
+            "Authorization": f"Bearer {provider.api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": provider.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": TRANSCRIBE_PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                        },
+                    ],
+                }
+            ],
+        },
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    message = resp.json()["choices"][0]["message"]["content"]
+    text = (message or "").strip()
+    return text or ""
+
+
+def _vision_ollama(provider, image_b64: str, timeout: int) -> str:
+    url = f"{provider.base_url}/api/generate"
+    resp = requests.post(
+        url,
+        json={
+            "model": provider.model,
+            "prompt": TRANSCRIBE_PROMPT,
+            "images": [image_b64],
+            "stream": False,
+        },
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    text = (resp.json().get("response") or "").strip()
+    return text or ""

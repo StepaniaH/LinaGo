@@ -654,7 +654,10 @@ class TranslateWindow(Gtk.ApplicationWindow):
         assert png is not None
 
         def _worker():
-            text = self._ocr_runner() if self._ocr_runner else ""
+            try:
+                text = self._ocr_runner() if self._ocr_runner else ""
+            except Exception:
+                text = None  # surfaced below as an OCR failure
             if not self._closed:
                 GLib.idle_add(_emit, self._on_ocr_done, text)
 

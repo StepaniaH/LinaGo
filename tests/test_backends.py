@@ -18,14 +18,20 @@ from linago.config import Provider
 
 
 class StubResponse:
-    def __init__(self, lines: list[str]):
-        self._lines = lines
+    def __init__(self, lines: list[str] | None = None, json_data=None):
+        self._lines = lines or []
+        self._json = json_data
 
     def raise_for_status(self):
         pass
 
     def iter_lines(self, decode_unicode=True):
         return iter(self._lines)
+
+    def json(self):
+        if self._json is None:
+            raise ValueError("no JSON body in stub")
+        return self._json
 
 
 @pytest.fixture
@@ -170,3 +176,85 @@ class TestDispatch:
         p = Provider(name="x", type="openai", label="X", base_url="u", model="m")
         with pytest.raises(RuntimeError, match="API key"):
             stream_completion(p, "p", lambda t: None, threading.Event())
+
+
+class TestVisionOCR:
+    @staticmethod
+    def _provider(type_: str = "openai") -> Provider:
+        return Provider(
+            name="v",
+            type=type_,
+            label="V",
+            base_url="https://v.test",
+            model="vl-model",
+            api_key="k-test",
+        )
+
+    def test_openai_payload_and_result(self, monkeypatch, tmp_path):
+        import base64 as b64mod
+
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"PNGDATA")
+        captured: dict = {}
+
+        def fake_post(url, **kw):
+            captured["url"] = url
+            captured["payload"] = kw["json"]
+            return StubResponse(
+                json_data={"choices": [{"message": {"content": "  hi there  "}}]}
+            )
+
+        monkeypatch.setattr(backends.requests, "post", fake_post)
+        assert backends.vision_ocr(self._provider(), png) == "hi there"
+
+        content = captured["payload"]["messages"][0]["content"]
+        assert content[0] == {"type": "text", "text": backends.TRANSCRIBE_PROMPT}
+        data_url = content[1]["image_url"]["url"]
+        prefix, _, encoded = data_url.partition(",")
+        assert prefix == "data:image/png;base64"
+        assert b64mod.b64decode(encoded) == b"PNGDATA"
+        assert captured["payload"]["model"] == "vl-model"
+
+    def test_ollama_sends_images_field(self, monkeypatch, tmp_path):
+        import base64 as b64mod
+
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"IMG")
+        captured: dict = {}
+
+        def fake_post(url, **kw):
+            captured["url"] = url
+            captured["payload"] = kw["json"]
+            return StubResponse(json_data={"response": " recognized "})
+
+        monkeypatch.setattr(backends.requests, "post", fake_post)
+        result = backends.vision_ocr(self._provider("ollama"), png)
+        assert result == "recognized"
+        assert captured["url"].endswith("/api/generate")
+        assert captured["payload"]["images"] == [b64mod.b64encode(b"IMG").decode()]
+        assert captured["payload"]["stream"] is False
+
+    def test_empty_model_output_is_empty_string(self, monkeypatch, tmp_path):
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"IMG")
+        monkeypatch.setattr(
+            backends.requests,
+            "post",
+            lambda url, **kw: StubResponse(json_data={"response": "   "}),
+        )
+        assert backends.vision_ocr(self._provider("ollama"), png) == ""
+
+    def test_transport_failure_is_none(self, monkeypatch, tmp_path):
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"IMG")
+
+        def broken(url, **kw):
+            raise backends.requests.ConnectionError("refused")
+
+        monkeypatch.setattr(backends.requests, "post", broken)
+        assert backends.vision_ocr(self._provider(), png) is None
+
+    def test_missing_key_raises(self, tmp_path):
+        provider = Provider(name="v", type="openai", label="V", base_url="u", model="m")
+        with pytest.raises(RuntimeError, match="API key"):
+            backends.vision_ocr(provider, tmp_path / "x.png")

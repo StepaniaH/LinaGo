@@ -14,6 +14,7 @@ import subprocess
 import sys
 
 from linago import ocr as ocr_mod
+from linago.backends import vision_ocr
 from linago.config import (
     load_actions,
     load_config,
@@ -79,6 +80,13 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
     )
     parser.add_argument("--ocr", action="store_true", help="截图 OCR 识别文字")
     parser.add_argument(
+        "--ocr-engine",
+        dest="ocr_engine",
+        choices=OCR_ENGINES,
+        default=os.environ.get("TRANSLATE_OCR_ENGINE"),
+        help="OCR 引擎（默认读 settings.toml [ocr].engine）",
+    )
+    parser.add_argument(
         "--selection",
         action="store_true",
         help="翻译主选区（primary selection）中的文本，需 wl-clipboard",
@@ -117,6 +125,15 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
         help="执行 settings.toml [actions] 中定义的动作而非直接翻译",
     )
     return parser
+
+
+OCR_ENGINES = ("tesseract", "vision")
+
+
+def resolve_ocr_engine(flag: str | None, configured: str) -> str:
+    """CLI flag > env > settings; unknown values fall back to tesseract."""
+    engine = flag or configured
+    return engine if engine in OCR_ENGINES and engine == "vision" else "tesseract"
 
 
 def read_primary_selection() -> str | None:
@@ -158,9 +175,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    engine = resolve_ocr_engine(args.ocr_engine, ocr_cfg.engine)
     check_dependencies(
         need_capture=args.ocr,
-        need_tesseract=args.ocr and ocr_cfg.engine == "tesseract",
+        need_tesseract=args.ocr and engine == "tesseract",
         need_selection=args.selection,
     )
 
@@ -169,10 +187,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.ocr:
         pending_png = ocr_mod.capture_region(cache_dir())
         source_text = "识别中..."
-        langs = ocr_cfg.tesseract_langs
+        if engine == "vision":
+            vision_provider = (
+                config.get(ocr_cfg.provider) if ocr_cfg.provider else config.get()
+            )
 
-        def ocr_runner(png=pending_png, langs=langs):
-            return ocr_mod.run_tesseract(png, langs)
+            def ocr_runner(png=pending_png, vp=vision_provider):
+                return vision_ocr(vp, png)
+
+        else:
+            langs = ocr_cfg.tesseract_langs
+
+            def ocr_runner(png=pending_png, langs=langs):
+                return ocr_mod.run_tesseract(png, langs)
 
     elif args.selection:
         selected = read_primary_selection()

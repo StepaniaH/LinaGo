@@ -215,3 +215,63 @@ class TestSelection:
         assert cli.main(["--selection", "--translate"]) == 0
         assert fake_ui["source_text"] == "héllo\nworld"
         assert fake_ui["translate"] is True
+
+
+class TestOcrEngine:
+    @staticmethod
+    def _allow_bins(monkeypatch):
+        tools = {
+            "slurp": "/usr/bin/slurp",
+            "grim": "/usr/bin/grim",
+            "tesseract": "/usr/bin/tesseract",
+            "hyprctl": "/usr/bin/hyprctl",
+        }
+        monkeypatch.setattr(cli.shutil, "which", lambda n: tools.get(n))
+
+    def test_resolve_precedence(self):
+        assert cli.resolve_ocr_engine(None, "tesseract") == "tesseract"
+        assert cli.resolve_ocr_engine(None, "vision") == "vision"
+        assert cli.resolve_ocr_engine("vision", "tesseract") == "vision"
+        assert cli.resolve_ocr_engine("bogus", "vision") == "tesseract"
+
+    def test_env_selects_engine(self, config_dir, monkeypatch):
+        monkeypatch.setenv("TRANSLATE_OCR_ENGINE", "vision")
+        args = cli.build_parser(["prov_a"]).parse_args([])
+        assert args.ocr_engine == "vision"
+
+    def test_vision_runner_skips_tesseract(
+        self, fake_ui, config_dir, tmp_path, monkeypatch
+    ):
+        self._allow_bins(monkeypatch)
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"png")
+        monkeypatch.setattr(cli.ocr_mod, "capture_region", lambda cache: png)
+        calls: dict = {"tess": 0, "vis": 0}
+
+        def fake_tess(path, langs="chi_sim+eng"):
+            calls["tess"] += 1
+            return "T"
+
+        def fake_vision(provider, path, **kw):
+            calls["vis"] += 1
+            assert provider.name == "prov_a"  # falls back to active
+            return "V"
+
+        monkeypatch.setattr(cli.ocr_mod, "run_tesseract", fake_tess)
+        monkeypatch.setattr(cli, "vision_ocr", fake_vision)
+
+        rc = cli.main(["--ocr", "--ocr-engine", "vision"])
+        assert rc == 0
+        assert fake_ui["ocr_runner"]() == "V"
+        assert calls == {"tess": 0, "vis": 1}
+
+    def test_tesseract_runner_default(self, fake_ui, config_dir, tmp_path, monkeypatch):
+        self._allow_bins(monkeypatch)
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"png")
+        monkeypatch.setattr(cli.ocr_mod, "capture_region", lambda cache: png)
+        monkeypatch.setattr(
+            cli.ocr_mod, "run_tesseract", lambda path, langs="x": f"T:{langs}"
+        )
+        cli.main(["--ocr"])
+        assert fake_ui["ocr_runner"]() == "T:chi_sim+eng"

@@ -36,6 +36,17 @@ base_url = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 api_key_env = "DEEPSEEK_API_KEY"
 
+# ── OCR engine ───────────────────────────────────────────────────────────────
+# engine: "tesseract" (offline, fast) or "vision" (multimodal model).
+# Vision mode sends the screenshot to the provider named below and
+# handles small text, dark themes, and stylized fonts far better.
+# Override per run with --ocr-engine / TRANSLATE_OCR_ENGINE.
+#
+# [ocr]
+# engine = "tesseract"
+# tesseract_langs = "chi_sim+eng"
+# provider = "ollama"          # used when engine = "vision"
+
 # ── custom actions ───────────────────────────────────────────────────────────
 # Named prompt templates shown in the popup's action dropdown and usable
 # as `linago --action <name>`. {source}/{target} become language names;
