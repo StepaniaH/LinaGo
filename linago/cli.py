@@ -184,6 +184,17 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
         help=_("Print the last N translations and exit (default 20)"),
     )
     parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help=_("Run environment and configuration self-checks"),
+    )
+    parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help=_("Print machine-readable output where supported"),
+    )
+    parser.add_argument(
         "--history-clear",
         dest="history_clear",
         action="store_true",
@@ -259,6 +270,33 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(verbose=args.verbose)
 
     socket_path = args.socket or default_socket_path()
+
+    if args.doctor:
+        from linago.doctor import has_fatal, run_checks
+
+        checks = run_checks(config)
+        if args.as_json:
+            import json as _json
+
+            print(
+                _json.dumps(
+                    [
+                        {
+                            "name": c.name,
+                            "ok": c.ok,
+                            "detail": c.detail,
+                            "warning": c.warning_only,
+                        }
+                        for c in checks
+                    ],
+                    indent=2,
+                )
+            )
+        else:
+            for c in checks:
+                mark = "ok" if c.ok else ("warn" if c.warning_only else "FAIL")
+                print(f"[{mark:>4}] {c.name}: {c.detail}")
+        return 1 if has_fatal(checks) else 0
 
     if args.history_clear:
         from linago.history import History

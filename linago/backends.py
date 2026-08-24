@@ -282,3 +282,31 @@ def tts_speech(
     )
     resp.raise_for_status()
     return resp.content
+
+
+def probe_ollama(provider, *, timeout: int = 3) -> tuple[bool, str]:
+    """Reachability check against Ollama's /api/tags."""
+    try:
+        resp = requests.get(f"{provider.base_url}/api/tags", timeout=timeout)
+        resp.raise_for_status()
+        names = [m.get("name") for m in resp.json().get("models", [])]
+        return True, f"reachable, {len(names)} model(s)"
+    except requests.RequestException as exc:
+        return False, str(exc)[:120]
+
+
+def probe_openai(provider, *, timeout: int = 3) -> tuple[bool, str]:
+    """Reachability check against an OpenAI-compatible /models list."""
+    try:
+        resp = requests.get(
+            f"{provider.base_url}/models",
+            headers={"Authorization": f"Bearer {provider.api_key}"},
+            timeout=timeout,
+        )
+        if resp.status_code == 401:
+            return False, "unauthorized: check the API key"
+        resp.raise_for_status()
+        data = resp.json().get("data") or []
+        return True, f"reachable, {len(data)} model(s)"
+    except requests.RequestException as exc:
+        return False, str(exc)[:120]
