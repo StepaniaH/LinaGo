@@ -8,6 +8,7 @@ OCR all run without a display; only the final popup launch imports
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import shutil
 import subprocess
@@ -124,6 +125,11 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
         default=os.environ.get("TRANSLATE_ACTION"),
         help="执行 settings.toml [actions] 中定义的动作而非直接翻译",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="输出详细日志（同时写入缓存目录 linago.log）",
+    )
     return parser
 
 
@@ -134,6 +140,22 @@ def resolve_ocr_engine(flag: str | None, configured: str) -> str:
     """CLI flag > env > settings; unknown values fall back to tesseract."""
     engine = flag or configured
     return engine if engine in OCR_ENGINES and engine == "vision" else "tesseract"
+
+
+def setup_logging(*, verbose: bool) -> None:
+    """WARNING→stderr by default; DEBUG also appends to the cache log."""
+    logger = logging.getLogger("linago")
+    logger.handlers.clear()
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if verbose:
+        cache_dir().mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(cache_dir() / "linago.log")
+        file_handler.setFormatter(fmt)
+        logger.addHandler(file_handler)
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.addHandler(logging.StreamHandler())
+        logger.setLevel(logging.WARNING)
 
 
 def read_primary_selection() -> str | None:
@@ -166,6 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     warn_secret_permissions()
 
     args = build_parser(config.names()).parse_args(argv)
+    setup_logging(verbose=args.verbose)
 
     if args.action and args.action not in actions:
         available = ", ".join(actions) or "（未定义）"

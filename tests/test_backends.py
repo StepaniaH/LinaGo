@@ -258,3 +258,49 @@ class TestVisionOCR:
         provider = Provider(name="v", type="openai", label="V", base_url="u", model="m")
         with pytest.raises(RuntimeError, match="API key"):
             backends.vision_ocr(provider, tmp_path / "x.png")
+
+
+class TestRetry:
+    def _ok(self):
+        return StubResponse(json_data={})
+
+    def test_retries_connection_errors_then_succeeds(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr(backends.time, "sleep", sleeps.append)
+        attempts = {"n": 0}
+
+        def flaky(url, **kw):
+            attempts["n"] += 1
+            if attempts["n"] < 3:
+                raise backends.requests.ConnectionError("reset")
+            return self._ok()
+
+        monkeypatch.setattr(backends.requests, "post", flaky)
+        resp = backends._post_with_retry("https://x.test", json={})
+        assert resp is not None
+        assert attempts["n"] == 3
+        assert sleeps == [0.5, 1.0]  # exponential backoff
+
+    def test_gives_up_after_attempts(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr(backends.time, "sleep", sleeps.append)
+
+        def always_down(url, **kw):
+            raise backends.requests.Timeout("too slow")
+
+        monkeypatch.setattr(backends.requests, "post", always_down)
+        with pytest.raises(backends.requests.Timeout):
+            backends._post_with_retry("https://x.test")
+        assert len(sleeps) == 2  # retried twice before giving up
+
+    def test_non_transport_errors_are_not_retried(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr(backends.time, "sleep", sleeps.append)
+
+        def rejected(url, **kw):
+            raise backends.requests.HTTPError("401 unauthorized")
+
+        monkeypatch.setattr(backends.requests, "post", rejected)
+        with pytest.raises(backends.requests.HTTPError):
+            backends._post_with_retry("https://x.test")
+        assert sleeps == []

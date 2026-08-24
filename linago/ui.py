@@ -7,6 +7,7 @@ machines without a Wayland stack.
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import threading
@@ -69,6 +70,7 @@ def translate_stream(
         try:
             stream_completion(provider, prompt, _ui_token, cancel)
         except Exception as exc:
+            logging.getLogger(__name__).error("translation failed: %s", exc)
             if not cancel.is_set():
                 GLib.idle_add(_emit, on_token, f"[翻译失败: {exc}]")
 

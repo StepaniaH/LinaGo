@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 TokenCallback = Callable[[str], None]
 
@@ -45,9 +48,39 @@ def _emit_coalesced(on_token, full: str, state: dict, force: bool = False):
         on_token(full)
 
 
+def _post_with_retry(
+    url: str,
+    *,
+    attempts: int = 3,
+    base_delay: float = 0.5,
+    **kwargs,
+):
+    """POST with bounded retries on connection-level failures.
+
+    Timeouts and dropped connections are usually transient; HTTP status
+    errors are raised immediately because repeating a rejected request
+    does not improve it.
+    """
+    for attempt in range(attempts):
+        try:
+            return requests.post(url, **kwargs)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            if attempt + 1 >= attempts:
+                raise
+            delay = base_delay * (2**attempt)
+            logger.warning(
+                "request to %s failed (%s), retrying in %.1fs",
+                url,
+                exc,
+                delay,
+            )
+            time.sleep(delay)
+
+
 def _stream_ollama(provider, prompt, on_token, cancel, timeout):
     url = f"{provider.base_url}/api/generate"
-    resp = requests.post(
+    logger.debug("ollama request: model=%s", provider.model)
+    resp = _post_with_retry(
         url,
         json={"model": provider.model, "prompt": prompt, "stream": True},
         stream=True,
@@ -86,7 +119,8 @@ def _stream_openai(provider, prompt, on_token, cancel, timeout):
         "stream": True,
         "temperature": 0.2,
     }
-    resp = requests.post(
+    logger.debug("openai-compatible request: model=%s", provider.model)
+    resp = _post_with_retry(
         url, headers=headers, json=payload, stream=True, timeout=timeout
     )
     resp.raise_for_status()
@@ -151,12 +185,14 @@ def vision_ocr(provider, image_path: str | Path, *, timeout: int = 180) -> str |
         TypeError,
         ValueError,
     ):
+        logger.warning("vision OCR failed", exc_info=True)
         return None
 
 
 def _vision_openai(provider, image_b64: str, timeout: int) -> str:
     url = f"{provider.base_url}/chat/completions"
-    resp = requests.post(
+    logger.debug("vision request via openai-compatible: model=%s", provider.model)
+    resp = _post_with_retry(
         url,
         headers={
             "Authorization": f"Bearer {provider.api_key}",
@@ -187,7 +223,8 @@ def _vision_openai(provider, image_b64: str, timeout: int) -> str:
 
 def _vision_ollama(provider, image_b64: str, timeout: int) -> str:
     url = f"{provider.base_url}/api/generate"
-    resp = requests.post(
+    logger.debug("vision request via ollama: model=%s", provider.model)
+    resp = _post_with_retry(
         url,
         json={
             "model": provider.model,

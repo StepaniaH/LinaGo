@@ -275,3 +275,24 @@ class TestOcrEngine:
         )
         cli.main(["--ocr"])
         assert fake_ui["ocr_runner"]() == "T:chi_sim+eng"
+
+
+class TestLogging:
+    def test_verbose_writes_debug_log_to_cache(self, tmp_path, monkeypatch):
+        import logging
+
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+        cli.setup_logging(verbose=True)
+        logger = logging.getLogger("linago")
+        assert logger.level == logging.DEBUG
+        assert len(logger.handlers) == 1
+        assert (tmp_path / "cache" / "linago" / "linago.log").exists()
+        logger.handlers.clear()
+
+    def test_default_is_warning_on_stderr(self):
+        import logging
+
+        cli.setup_logging(verbose=False)
+        logger = logging.getLogger("linago")
+        assert logger.level == logging.WARNING
+        logger.handlers.clear()
