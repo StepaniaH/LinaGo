@@ -15,7 +15,6 @@ dependencies = [
 ]
 keywords = ["ocr", "translation", "wayland", "hyprland", "tesseract", "ollama"]
 classifiers = [
-    "Environment :: Wayland",
     "Intended Audience :: End Users/Desktop",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
