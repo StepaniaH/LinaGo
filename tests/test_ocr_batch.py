@@ -57,7 +57,7 @@ class TestRunOcrBatch:
             p = tmp_path / f"r{i}.png"
             p.write_bytes(b"png")
             pngs.append(p)
-        results = {"r0": " first ", "r1": "", "r2": None}
+        results = {"r0": " first ", "r1": "", "r2": ""}
 
         def fake_tess(argv, *a, **kw):
             key = Path(argv[1]).stem  # r0 / r1 / r2

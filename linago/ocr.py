@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from collections.abc import Callable
@@ -10,6 +11,8 @@ from pathlib import Path
 from linago.backends import vision_ocr
 from linago.config import OcrSettings
 from linago.lang import normalize_text
+
+logger = logging.getLogger(__name__)
 
 TESSERACT_LANGS_DEFAULT = "chi_sim+eng"
 
@@ -142,12 +145,17 @@ def run_ocr_batch(
     """
     parts: list[str] = []
     for png in pngs:
-        if engine == "vision":
-            provider = get_provider(ocr_cfg.provider)
-            text = vision_ocr(provider, png)
+        try:
+            if engine == "vision":
+                provider = get_provider(ocr_cfg.provider)
+                text = vision_ocr(provider, png)
+            else:
+                text = run_tesseract(png, ocr_cfg.tesseract_langs)
+        except Exception:
+            logger.warning("batch OCR failed for %s", png.name, exc_info=True)
+            text = None
+        finally:
             png.unlink(missing_ok=True)
-        else:
-            text = run_tesseract(png, ocr_cfg.tesseract_langs)
         if text:
             parts.append(text)
     return "\n\n".join(parts)
