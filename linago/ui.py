@@ -34,6 +34,7 @@ from linago.lang import (  # noqa: E402
 )
 from linago.ocr import forward_to_translation  # noqa: E402
 from linago.placement import (  # noqa: E402
+    BODY_PAD_V,
     active_monitor,
     compute_placement,
     compute_section_caps,
@@ -213,6 +214,13 @@ class TextSection:
     def sync_height(self):
         sync_scroll_height(self.view, self.scroll, self.min_h, self.max_h)
 
+    def update_max_h(self, max_h: int):
+        """Adopt a recomputed height cap and re-fit the scroller."""
+        if max_h == self.max_h:
+            return
+        self.max_h = max_h
+        self.sync_height()
+
     def _on_copy_clicked(self, _btn):
         if not copy_to_clipboard(self.copy_btn, self.get_text().strip()):
             return
@@ -301,11 +309,13 @@ class TranslateWindow(Gtk.ApplicationWindow):
         Gtk4LayerShell.set_layer(self, Gtk4LayerShell.Layer.OVERLAY)
         Gtk4LayerShell.set_keyboard_mode(self, Gtk4LayerShell.KeyboardMode.EXCLUSIVE)
 
+        self._avail_h = 600  # refined below or by measured chrome
         try:
             pos = get_cursor_position()
             if pos is None:
                 raise RuntimeError("cursor position unavailable")
             placement = compute_placement(pos[0], pos[1], active_monitor())
+            self._avail_h = placement.avail_h
 
             Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.LEFT, True)
             Gtk4LayerShell.set_margin(
@@ -324,7 +334,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
                 )
 
             self._source_max_h, self._translation_max_h = compute_section_caps(
-                placement.avail_h, self._translate
+                self._avail_h, self._translate
             )
         except Exception:
             Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.TOP, True)
@@ -366,6 +376,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         header.set_css_classes(["header"])
+        self._header_box = header
 
         title = Gtk.Label(label="翻译")
         title.set_css_classes(["title"])
@@ -380,8 +391,10 @@ class TranslateWindow(Gtk.ApplicationWindow):
         header.append(close_btn)
         root.append(header)
 
+        self._lang_bar: Gtk.Box | None = None
         if self._translate:
-            root.append(self._build_lang_bar())
+            self._lang_bar = self._build_lang_bar()
+            root.append(self._lang_bar)
 
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         body.set_css_classes(["body"])
@@ -402,10 +415,12 @@ class TranslateWindow(Gtk.ApplicationWindow):
         source_keys.connect("key-pressed", self._on_source_key_pressed)
         self._source_section.view.add_controller(source_keys)
 
+        self._separator: Gtk.Separator | None = None
         if self._translate:
             sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
             sep.set_css_classes(["separator"])
             body.append(sep)
+            self._separator = sep
 
             waiting = "等待识别..." if self._pending_png else "翻译中..."
             self._translation_section = TextSection(
@@ -420,6 +435,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
 
         footer_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         footer_box.set_css_classes(["footer"])
+        self._footer_box = footer_box
         if self._translate and self._actions:
             entries = ["翻译", *self._actions.keys()]
             store = Gtk.StringList.new(entries)
@@ -468,10 +484,49 @@ class TranslateWindow(Gtk.ApplicationWindow):
             footer_box.append(footer_label)
         root.append(footer_box)
 
+        GLib.idle_add(self._apply_measured_chrome)
+
         if self._pending_png:
             GLib.idle_add(self._start_ocr)
         elif self._translate:
             GLib.idle_add(self._start_translation)
+
+    def _apply_measured_chrome(self):
+        """Replace estimated chrome heights with real widget measures.
+
+        The pre-layout caps rely on rough constants; once the widgets
+        exist we can measure them and redistribute the vertical budget
+        so theme/font changes don't push the card off-screen.
+        """
+        if self._closed:
+            return False
+
+        def nat(widget: Gtk.Widget | None) -> int:
+            if widget is None:
+                return 0
+            _mn, natural, _mb, _nb = widget.measure(Gtk.Orientation.VERTICAL, -1)
+            return natural
+
+        chrome = BODY_PAD_V
+        chrome += nat(getattr(self, "_header_box", None))
+        chrome += nat(self._lang_bar)
+        chrome += nat(self._separator)
+        chrome += nat(self._footer_box)
+        if self._source_section:
+            chrome += nat(self._source_section.section_label)
+        if self._translation_section:
+            chrome += nat(self._translation_section.section_label)
+
+        source_cap, translation_cap = compute_section_caps(
+            self._avail_h, self._translate, chrome_h=chrome
+        )
+        self._source_max_h = source_cap
+        self._translation_max_h = translation_cap
+        if self._source_section:
+            self._source_section.update_max_h(source_cap)
+        if self._translation_section:
+            self._translation_section.update_max_h(translation_cap)
+        return False
 
     def _build_lang_bar(self) -> Gtk.Box:
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)

@@ -3,7 +3,10 @@
 Geometry comes from ``hyprctl``. All values are logical pixels:
 ``hyprctl monitors -j`` reports width/height with the monitor scale
 already applied, and ``hyprctl cursorpos`` reports global logical
-coordinates in the same space. Placement math therefore runs against
+coordinates in the same space. Hyprland also positions monitors in the
+shared layout using their scaled resolution (the wiki's monitor docs:
+a scale-2 3840px panel occupies 1920 layout pixels), so inter-monitor
+x/y offsets are logical as well. Placement math therefore runs against
 the active monitor's bounds with the cursor converted to monitor-local
 coordinates, which keeps the popup correct on multi-monitor layouts.
 Layer-shell margins are relative to the anchored output's edges, i.e.
