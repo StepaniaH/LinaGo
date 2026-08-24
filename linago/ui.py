@@ -1277,6 +1277,16 @@ def run_resident(
         print(str(exc), file=_sys.stderr)
         return 1
 
+    # Service managers stop daemons with SIGTERM; route it through the
+    # GLib main loop so the finally-block cleanup still runs.
+    import signal
+
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, app.quit)
+    except (AttributeError, ImportError):
+        pass
+
     try:
         code = app.run(None)
     finally:
