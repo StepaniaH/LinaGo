@@ -36,3 +36,19 @@ def find_config_dir() -> Path | None:
         if (d / "settings.toml").exists():
             return d
     return None
+
+
+def ensure_config_dir() -> Path:
+    """An existing config directory, creating the user-level one if needed.
+
+    Used by writers (theme regeneration, the web console) when no
+    checkout-style ``config/`` directory exists.
+    """
+    existing = find_config_dir()
+    if existing is not None:
+        return existing
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    user = Path(xdg) if xdg else Path.home() / ".config"
+    target = user / "linago"
+    target.mkdir(parents=True, exist_ok=True)
+    return target

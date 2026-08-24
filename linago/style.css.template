@@ -1,0 +1,197 @@
+.card {
+    background-color: rgba($surface, $bg_alpha);
+    border: 1px solid $border;
+    border-radius: $radius_card;
+    min-width: 440px;
+    padding: 0;
+}
+
+/* ── header ─────────────────────────────────────────────── */
+.header {
+    padding: 16px 20px 0 20px;
+}
+
+.title {
+    color: $title_fg;
+    font-size: $title_px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: $muted_fg;
+    font-size: $close_px;
+    padding: 0 4px;
+    border-radius: $radius_btn;
+    min-width: 34px;
+    min-height: 34px;
+}
+
+.close-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: $close_hover_fg;
+}
+
+/* ── language bar (Bob-style pair picker) ────────────────── */
+.lang-bar {
+    padding: 10px 20px 0 20px;
+}
+
+.swap-btn {
+    background: none;
+    border: none;
+    color: $swap_fg;
+    font-size: $swap_px;
+    border-radius: $radius_btn;
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0;
+}
+
+.swap-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: $swap_hover_fg;
+}
+
+/* ── body ───────────────────────────────────────────────── */
+.body {
+    padding: 14px 20px;
+}
+
+.section-label {
+    color: $muted_fg;
+    font-size: $small_px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+/* ── source text (original / OCR, editable) ─────────────── */
+.source-text {
+    color: $src_fg;
+    font-size: $source_px;
+    line-height: 1.6;
+}
+
+/* TextView paints its own background; keep it flush with the card */
+textview.editable-text,
+textview.editable-text > text {
+    background: none;
+    background-color: transparent;
+    color: $edit_fg;
+    caret-color: $caret_fg;
+}
+
+textview.editable-text:focus-within > text,
+textview.editable-text > text:selected {
+    color: $edit_focus_fg;
+}
+
+/* ── copy button (bottom-right of each text box) ────────── */
+.copy-btn {
+    background-color: $hov;
+    border: none;
+    color: $caret_fg;
+    font-size: $small_px;
+    border-radius: $radius_btn;
+    min-width: 26px;
+    min-height: 26px;
+    padding: 0;
+    margin: 2px 4px;
+    opacity: 0.5;
+}
+
+.copy-btn:hover {
+    background-color: $hov_strong;
+    color: $btn_hover_fg;
+    opacity: 1;
+}
+
+/* ── separator ──────────────────────────────────────────── */
+.separator {
+    margin: 12px 0;
+    opacity: 0.08;
+}
+
+/* ── translation result ─────────────────────────────────── */
+.translation-text {
+    color: $text_fg;
+    font-size: $text_px;
+    line-height: 1.7;
+    margin-top: 4px;
+}
+
+/* ── footer ─────────────────────────────────────────────── */
+.footer {
+    padding: 10px 20px 14px 20px;
+}
+
+.footer label,
+.footer-meta {
+    color: $foot_fg;
+    font-size: $foot_px;
+}
+
+.footer-meta {
+    color: $meta_fg;
+    letter-spacing: 0.3px;
+}
+
+/* GTK4 DropDown: color must hit the inner button/label nodes */
+dropdown.provider-dropdown > button {
+    min-width: 180px;
+    min-height: 30px;
+    background-color: $dd_bg;
+    border-radius: $radius_ctrl;
+    padding: 4px 10px;
+    color: $dd_fg;
+}
+
+dropdown.provider-dropdown > button:hover {
+    background-color: $dd_hover;
+}
+
+dropdown.provider-dropdown > button label {
+    color: $dd_fg;
+    font-size: $small_px;
+    font-weight: 500;
+}
+
+dropdown.provider-dropdown > button arrow {
+    color: $dd_arrow_fg;
+}
+
+/* Same treatment for language dropdowns */
+dropdown.lang-dropdown > button {
+    min-width: 108px;
+    min-height: 30px;
+    background-color: $dd_bg;
+    border-radius: $radius_ctrl;
+    padding: 4px 8px;
+    color: $dd_fg;
+}
+
+dropdown.lang-dropdown > button:hover {
+    background-color: $dd_hover;
+}
+
+dropdown.lang-dropdown > button label {
+    color: $dd_fg;
+    font-size: $small_px;
+}
+
+dropdown.lang-dropdown > button arrow {
+    color: $dd_arrow_fg;
+}
+
+/* Popover list opened by either dropdown */
+popover contents listview row label {
+    color: $row_fg;
+    font-size: $small_px;
+}
+
+popover contents listview row:selected label,
+popover contents listview row:hover label {
+    color: $btn_hover_fg;
+}
