@@ -200,12 +200,10 @@ class TestVisionOCR:
         def fake_post(url, **kw):
             captured["url"] = url
             captured["payload"] = kw["json"]
-            return StubResponse(
-                json_data={"choices": [{"message": {"content": "  hi there  "}}]}
-            )
+            return StubResponse(_sse({"delta": {"content": "  hi there  "}}))
 
         monkeypatch.setattr(backends.requests, "post", fake_post)
-        assert backends.vision_ocr(self._provider(), png) == "hi there"
+        assert backends.vision_ocr(TestVisionOCR._provider(), png) == "hi there"
 
         content = captured["payload"]["messages"][0]["content"]
         assert content[0] == {"type": "text", "text": backends.TRANSCRIBE_PROMPT}
@@ -225,14 +223,14 @@ class TestVisionOCR:
         def fake_post(url, **kw):
             captured["url"] = url
             captured["payload"] = kw["json"]
-            return StubResponse(json_data={"response": " recognized "})
+            return StubResponse([json.dumps({"response": "recognized", "done": True})])
 
         monkeypatch.setattr(backends.requests, "post", fake_post)
-        result = backends.vision_ocr(self._provider("ollama"), png)
+        result = backends.vision_ocr(TestVisionOCR._provider("ollama"), png)
         assert result == "recognized"
         assert captured["url"].endswith("/api/generate")
         assert captured["payload"]["images"] == [b64mod.b64encode(b"IMG").decode()]
-        assert captured["payload"]["stream"] is False
+        assert captured["payload"]["stream"] is True
 
     def test_empty_model_output_is_empty_string(self, monkeypatch, tmp_path):
         png = tmp_path / "shot.png"
@@ -242,7 +240,7 @@ class TestVisionOCR:
             "post",
             lambda url, **kw: StubResponse(json_data={"response": "   "}),
         )
-        assert backends.vision_ocr(self._provider("ollama"), png) == ""
+        assert backends.vision_ocr(TestVisionOCR._provider("ollama"), png) == ""
 
     def test_transport_failure_is_none(self, monkeypatch, tmp_path):
         png = tmp_path / "shot.png"
@@ -252,7 +250,7 @@ class TestVisionOCR:
             raise backends.requests.ConnectionError("refused")
 
         monkeypatch.setattr(backends.requests, "post", broken)
-        assert backends.vision_ocr(self._provider(), png) is None
+        assert backends.vision_ocr(TestVisionOCR._provider(), png) is None
 
     def test_missing_key_raises(self, tmp_path):
         provider = Provider(name="v", type="openai", label="V", base_url="u", model="m")
@@ -372,5 +370,85 @@ class TestProviderOptions:
         assert seen["timeout"] == 7
 
         seen.clear()
-        stream_completion(self._provider(), "p", lambda t: None, threading.Event())
+        stream_completion(
+            self._provider(),
+            "p",
+            lambda t: None,
+            threading.Event(),
+        )
         assert seen["timeout"] == 120
+
+
+class TestStreamVisionOCR:
+    _provider = staticmethod(
+        TestVisionOCR._provider.__func__
+        if hasattr(TestVisionOCR._provider, "__func__")
+        else TestVisionOCR._provider
+    )
+
+    def test_progress_receives_accumulated_text(self, monkeypatch, tmp_path):
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"IMG")
+        monkeypatch.setattr(
+            backends.requests,
+            "post",
+            lambda url, **kw: StubResponse(
+                [
+                    json.dumps({"response": "你"}),
+                    "",
+                    json.dumps({"response": "好", "done": True}),
+                ]
+            ),
+        )
+        seen: list[str] = []
+        result = backends.stream_vision_ocr(
+            self._provider("ollama"), png, seen.append, None
+        )
+        assert result == "你好"
+        assert seen[-1] == "你好"
+
+    def test_sse_deltas_stream(self, monkeypatch, tmp_path):
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"IMG")
+        monkeypatch.setattr(
+            backends.requests,
+            "post",
+            lambda url, **kw: StubResponse(
+                _sse({"delta": {"content": "hi"}}) + ["data: not-json"]
+            ),
+        )
+        seen: list[str] = []
+        provider = self._provider("openai")
+        result = backends.stream_vision_ocr(provider, png, seen.append, None)
+        assert result == "hi"
+        assert seen[-1] == "hi"
+
+    def test_cancel_returns_partial(self, monkeypatch, tmp_path):
+        import threading
+
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"IMG")
+        cancel = threading.Event()
+        cancel.set()
+        monkeypatch.setattr(
+            backends.requests,
+            "post",
+            lambda url, **kw: StubResponse(
+                [json.dumps({"response": "partial", "done": False})]
+            ),
+        )
+        provider = self._provider("ollama")
+        result = backends.stream_vision_ocr(provider, png, None, cancel)
+        assert result == ""
+
+    def test_blocking_wrapper_matches_stream_result(self, monkeypatch, tmp_path):
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"IMG")
+        monkeypatch.setattr(
+            backends.requests,
+            "post",
+            lambda url, **kw: StubResponse(
+                [json.dumps({"response": "final", "done": True})]
+            ),
+        )
+        assert backends.vision_ocr(self._provider("ollama"), png) == "final"

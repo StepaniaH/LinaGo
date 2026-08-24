@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from linago.backends import vision_ocr
+from linago.backends import stream_vision_ocr
 from linago.config import OcrSettings
 from linago.lang import normalize_text
 
@@ -89,24 +89,25 @@ def make_ocr_runner(
     engine: str,
     ocr_cfg: OcrSettings,
     get_provider: Callable[[str | None], object],
-) -> Callable[[], str | None]:
-    """Build the zero-arg OCR callable for a captured screenshot.
+) -> Callable[[Callable | None], str | None]:
+    """Build the OCR callable for a captured screenshot.
 
-    ``get_provider`` resolves the vision provider by name (None meaning
-    the active one); both engine branches return str | None with the
-    failure contract of run_tesseract/vision_ocr.
+    The callable takes an optional ``progress(full_so_far)`` sink: the
+    vision engine streams transcription updates into it, tesseract
+    ignores it. Return values follow the failure contract of
+    run_tesseract/vision_ocr.
     """
     if engine == "vision":
         provider = get_provider(ocr_cfg.provider)
 
-        def vision_runner():
-            return vision_ocr(provider, png)
+        def vision_runner(progress=None):
+            return stream_vision_ocr(provider, png, progress, None)
 
         return vision_runner
 
     langs = ocr_cfg.tesseract_langs
 
-    def tesseract_runner():
+    def tesseract_runner(_progress=None):
         return run_tesseract(png, langs)
 
     return tesseract_runner
@@ -148,7 +149,7 @@ def run_ocr_batch(
         try:
             if engine == "vision":
                 provider = get_provider(ocr_cfg.provider)
-                text = vision_ocr(provider, png)
+                text = stream_vision_ocr(provider, png, None, None)
             else:
                 text = run_tesseract(png, ocr_cfg.tesseract_langs)
         except Exception:

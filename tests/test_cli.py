@@ -233,13 +233,13 @@ class TestOcrEngine:
             calls["tess"] += 1
             return "T"
 
-        def fake_vision(provider, path, **kw):
+        def fake_vision(provider, path, on_token=None, cancel=None):
             calls["vis"] += 1
             assert provider.name == "prov_a"  # falls back to active
             return "V"
 
         monkeypatch.setattr(cli.ocr_mod, "run_tesseract", fake_tess)
-        monkeypatch.setattr(cli.ocr_mod, "vision_ocr", fake_vision)
+        monkeypatch.setattr(cli.ocr_mod, "stream_vision_ocr", fake_vision)
 
         rc = cli.main(["--ocr", "--ocr-engine", "vision"])
         assert rc == 0

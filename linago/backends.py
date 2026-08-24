@@ -11,6 +11,8 @@ from pathlib import Path
 
 import requests
 
+from linago.lang import normalize_text
+
 logger = logging.getLogger(__name__)
 
 TokenCallback = Callable[[str], None]
@@ -173,21 +175,120 @@ def _stream_openai(provider, prompt, on_token, cancel, timeout):
 
 
 # ── vision OCR ───────────────────────────────────────────────────────────────
-def vision_ocr(provider, image_path: str | Path, *, timeout: int = 180) -> str | None:
-    """Transcribe a screenshot with a multimodal model.
-
-    Returns the transcription, "" when the model returned nothing, or
-    None on any transport/response failure. Callers treat None as OCR
-    failure and empty as "nothing recognized".
-    """
+def _vision_request(
+    provider,
+    image_path: str | Path,
+    *,
+    stream: bool,
+    timeout: int,
+):
+    """Build and send the multimodal request for either backend type."""
     provider.require_ready()
+    encoded = base64.b64encode(Path(image_path).read_bytes()).decode()
+    if provider.type == "openai":
+        url = f"{provider.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {provider.api_key}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "model": provider.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": TRANSCRIBE_PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{encoded}"},
+                        },
+                    ],
+                }
+            ],
+            "stream": stream,
+        }
+        if stream:
+            body["temperature"] = 0.0
+        return url, headers, body
+    if provider.type == "ollama":
+        url = f"{provider.base_url}/api/generate"
+        body = {
+            "model": provider.model,
+            "prompt": TRANSCRIBE_PROMPT,
+            "images": [encoded],
+            "stream": stream,
+        }
+        return url, None, body
+    raise RuntimeError(f"unsupported provider type: {provider.type}")
+
+
+def _cancelled(cancel) -> bool:
+    return cancel is not None and cancel.is_set()
+
+
+def stream_vision_ocr(
+    provider,
+    image_path: str | Path,
+    on_token,
+    cancel,
+    *,
+    timeout: int = 180,
+) -> str | None:
+    """Transcribe a screenshot, emitting accumulated text while streaming.
+
+    Contract mirrors vision_ocr: the final transcription, "" when the
+    model produced nothing, or None on transport/response failure.
+    on_token(full_so_far) fires at most every 40 ms plus a forced final
+    emit; it never receives error text.
+    """
     try:
-        encoded = base64.b64encode(Path(image_path).read_bytes()).decode()
-        if provider.type == "ollama":
-            return _vision_ollama(provider, encoded, timeout)
-        if provider.type == "openai":
-            return _vision_openai(provider, encoded, timeout)
-        raise RuntimeError(f"unsupported provider type: {provider.type}")
+        url, headers, body = _vision_request(
+            provider, image_path, stream=True, timeout=timeout
+        )
+        logger.debug("vision request via %s: model=%s", provider.type, provider.model)
+        resp = _post_with_retry(
+            url, headers=headers, json=body, stream=True, timeout=timeout
+        )
+        resp.raise_for_status()
+        full = ""
+        state = {"last": 0.0}
+        # Wire formats are told apart per line, not by content type:
+        # SSE frames start with "data:", Ollama streams bare JSON.
+        for line in resp.iter_lines(decode_unicode=True):
+            if _cancelled(cancel):
+                return normalize_vision_text(full)
+            if not line:
+                continue
+            if line.startswith("data:"):
+                data = line[len("data:") :].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                choices = chunk.get("choices") or []
+                piece = (
+                    (choices[0].get("delta") or {}).get("content") if choices else ""
+                )
+            else:
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                piece = chunk.get("response", "")
+            if not piece:
+                continue
+            full += piece
+            done = bool(chunk.get("done"))
+            if on_token is not None:
+                _emit_coalesced(on_token, full, state, force=done)
+            if done:
+                break
+        result = normalize_vision_text(full)
+        if not _cancelled(cancel) and on_token is not None and result:
+            on_token(result)
+        return result
     except (
         requests.RequestException,
         OSError,
@@ -200,54 +301,13 @@ def vision_ocr(provider, image_path: str | Path, *, timeout: int = 180) -> str |
         return None
 
 
-def _vision_openai(provider, image_b64: str, timeout: int) -> str:
-    url = f"{provider.base_url}/chat/completions"
-    logger.debug("vision request via openai-compatible: model=%s", provider.model)
-    resp = _post_with_retry(
-        url,
-        headers={
-            "Authorization": f"Bearer {provider.api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": provider.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": TRANSCRIBE_PROMPT},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{image_b64}"},
-                        },
-                    ],
-                }
-            ],
-        },
-        timeout=timeout,
-    )
-    resp.raise_for_status()
-    message = resp.json()["choices"][0]["message"]["content"]
-    text = (message or "").strip()
-    return text or ""
+def normalize_vision_text(text: str) -> str:
+    return normalize_text(text)
 
 
-def _vision_ollama(provider, image_b64: str, timeout: int) -> str:
-    url = f"{provider.base_url}/api/generate"
-    logger.debug("vision request via ollama: model=%s", provider.model)
-    resp = _post_with_retry(
-        url,
-        json={
-            "model": provider.model,
-            "prompt": TRANSCRIBE_PROMPT,
-            "images": [image_b64],
-            "stream": False,
-        },
-        timeout=timeout,
-    )
-    resp.raise_for_status()
-    text = (resp.json().get("response") or "").strip()
-    return text or ""
+def vision_ocr(provider, image_path: str | Path, *, timeout: int = 180):
+    """Blocking wrapper over :func:`stream_vision_ocr` without output."""
+    return stream_vision_ocr(provider, image_path, None, None, timeout=timeout)
 
 
 def tts_speech(

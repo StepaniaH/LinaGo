@@ -93,12 +93,12 @@ class TestRunOcrBatch:
         class FakeProvider:
             pass
 
-        def fake_vision(provider, path, **kw):
+        def fake_vision(provider, path, on_token=None, cancel=None):
             seen["provider"] = provider
             seen["path"] = path
             return "vision text"
 
-        monkeypatch.setattr(ocr, "vision_ocr", fake_vision)
+        monkeypatch.setattr(ocr, "stream_vision_ocr", fake_vision)
         provider = FakeProvider()
         out = ocr.run_ocr_batch(
             [png],

@@ -424,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
         source_text = _("Recognizing...")
         pending_png = pending_list[0]
 
-        def ocr_runner(pngs=tuple(pending_list), engine=engine):
+        def ocr_runner(_progress=None, pngs=tuple(pending_list), engine=engine):
             return ocr_mod.run_ocr_batch(
                 list(pngs), engine=engine, ocr_cfg=ocr_cfg, get_provider=config.get
             )
@@ -470,6 +470,7 @@ def main(argv: list[str] | None = None) -> int:
         config=config,
         provider_name=args.provider or config.active,
         compare_names=compare_names,
+        ocr_engine=engine,
     )
 
 

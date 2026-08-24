@@ -304,6 +304,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         tts_provider=None,
         lang_memory: LanguageMemory | None = None,
         compare_names: list[str] | None = None,
+        ocr_engine: str = "tesseract",
     ):
         super().__init__(application=app, title=_("Translate"))
         self._source_text = source_text
@@ -323,6 +324,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._lang_memory = lang_memory
         self._last_class: str | None = None
         self._compare = resolve_providers(compare_names or [], self._config)
+        self._active_ocr_engine = ocr_engine
         self._pinned = False
         self._closed = False
         self._cancel = threading.Event()
@@ -851,8 +853,14 @@ class TranslateWindow(Gtk.ApplicationWindow):
         assert png is not None
 
         def _worker():
+            sink = None
+            if self._active_ocr_engine == "vision":
+
+                def sink(text: str):
+                    GLib.idle_add(_emit, self._on_ocr_progress, text)
+
             try:
-                text = self._ocr_runner() if self._ocr_runner else ""
+                text = self._ocr_runner(sink) if self._ocr_runner else ""
             except Exception:
                 text = None  # surfaced below as an OCR failure
             if not self._closed:
@@ -860,6 +868,20 @@ class TranslateWindow(Gtk.ApplicationWindow):
 
         threading.Thread(target=_worker, daemon=True).start()
         return False
+
+    def _on_ocr_progress(self, text: str):
+        """Live transcription preview while a vision model streams."""
+        if self._closed or not self._pending_png or not text:
+            return
+        if self._source_section:
+            self._source_section.set_text(normalize_text(text))
+
+    def _on_ocr_progress(self, text: str):
+        """Live transcription preview while a vision model streams."""
+        if self._closed or not self._pending_png or not text:
+            return
+        if self._source_section:
+            self._source_section.set_text(normalize_text(text))
 
     def _on_ocr_done(self, text):
         if self._closed:
@@ -1042,6 +1064,8 @@ class TranslateApp(Gtk.Application):
         history: History | None = None,
         tts_provider=None,
         lang_memory: LanguageMemory | None = None,
+        compare_names: list[str] | None = None,
+        ocr_engine: str = "tesseract",
     ):
         super().__init__(application_id="io.github.stepaniah.linago")
         self._source_text = source_text
@@ -1059,6 +1083,8 @@ class TranslateApp(Gtk.Application):
         self._history = history
         self._tts_provider = tts_provider
         self._lang_memory = lang_memory
+        self._compare_names = list(compare_names or [])
+        self._active_ocr_engine = ocr_engine
         self._window: TranslateWindow | None = None
         self.event_publisher = None  # set by run_resident()
 
@@ -1075,6 +1101,7 @@ class TranslateApp(Gtk.Application):
             from_lang=self._from_lang,
             to_lang=self._to_lang,
             action_name=self._action_name,
+            ocr_engine=self._active_ocr_engine,
         )
 
     def _open_window(
@@ -1087,9 +1114,12 @@ class TranslateApp(Gtk.Application):
         from_lang="auto",
         to_lang="auto",
         action_name=None,
+        ocr_engine=None,
     ):
         if self._window is not None and not self._window._closed:
             self._window.close()
+        if ocr_engine is not None:
+            self._active_ocr_engine = ocr_engine
         self._window = TranslateWindow(
             self,
             source_text,
@@ -1106,6 +1136,8 @@ class TranslateApp(Gtk.Application):
             history=self._history,
             tts_provider=self._tts_provider,
             lang_memory=self._lang_memory,
+            compare_names=self._compare_names,
+            ocr_engine=self._active_ocr_engine,
         )
         self._window.present()
 
@@ -1114,6 +1146,7 @@ class TranslateApp(Gtk.Application):
         kind = payload.get("kind")
         engine = self._ocr_settings.engine if self._ocr_settings else "tesseract"
         engine = payload.get("engine") or engine
+        self._active_ocr_engine = engine
         if kind == "translate":
             text = payload.get("text")
             if text is None:
@@ -1139,7 +1172,7 @@ class TranslateApp(Gtk.Application):
                 return False
             engine_now = payload.get("engine") or engine
 
-            def batch_runner(pngs=tuple(pngs), engine=engine_now):
+            def batch_runner(_progress=None, pngs=tuple(pngs), engine=engine_now):
                 return run_ocr_batch(
                     list(pngs),
                     engine=engine,
@@ -1169,6 +1202,7 @@ def run_app(
     config: AppConfig | None = None,
     provider_name: str | None = None,
     compare_names: list[str] | None = None,
+    ocr_engine: str = "tesseract",
 ) -> int:
     """Create the popup application and run its main loop."""
     app = TranslateApp(
@@ -1186,6 +1220,7 @@ def run_app(
         config=config,
         provider_name=provider_name,
         compare_names=compare_names,
+        ocr_engine=ocr_engine,
     )
     return app.run(None)
 
