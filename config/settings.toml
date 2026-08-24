@@ -63,3 +63,13 @@ api_key_env = "DEEPSEEK_API_KEY"
 #
 # Set a default for the dropdown with `action = "explain"` under [app].
 
+# ── history / speech / memory ────────────────────────────────────────────────
+# [history]
+# enabled = false             # stop recording translations locally
+#
+# [tts]
+# provider = "openai"         # speak button; needs an OpenAI-compatible TTS
+#
+# [memory]
+# enabled = true              # remember source languages per app class
+

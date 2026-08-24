@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.3.0-blue" />
+  <img alt="version" src="https://img.shields.io/badge/version-v0.4.0-blue" />
   <img alt="platform" src="https://img.shields.io/badge/platform-Hyprland%20%7C%20Wayland-lightgrey" />
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green" />
 </p>
@@ -70,12 +70,14 @@ pip install .          # console script: linago
 ```bash
 ./run.sh --ocr                          # screenshot → OCR → popup
 ./run.sh --ocr --translate              # screenshot → OCR → translate → popup
+./run.sh --ocr-multi --translate        # several regions → one translation
 ./run.sh --ocr-engine vision --translate  # transcribe with a vision model
 ./run.sh --selection --translate        # translate the primary selection
 ./run.sh --translate --text "hello"     # translate given text
 ./run.sh --translate --action explain --text "…"
 ./run.sh --translate --provider openai --text "…"
 ./run.sh --translate --from auto --to zh --text "…"
+./run.sh --history 50                   # replay recent translations
 ./run.sh                                # demo / help card
 ```
 
@@ -98,6 +100,24 @@ Failed or empty OCR stays in the source pane with its message and is never sent 
 ```conf
 bind = SUPER, T, exec, /path/to/LinaGo/run.sh --ocr --translate
 bind = SUPER, S, exec, /path/to/LinaGo/run.sh --selection --translate
+```
+
+### Resident daemon
+
+```bash
+./run.sh --daemon
+```
+
+While a daemon runs, every other invocation detects its socket and
+forwards the request instead of starting a fresh process — hotkey
+pops appear instantly. `--no-forward` opts out, `--socket PATH`
+relocates the endpoint (`$XDG_RUNTIME_DIR/linago-$UID.sock` default).
+
+Subscribers receive one JSON line per completed translation, e.g. for
+OBS overlays or logging:
+
+```bash
+echo '{"cmd":"subscribe"}' | nc -U "$XDG_RUNTIME_DIR/linago-$UID.sock"
 ```
 
 ## Configuration
@@ -124,7 +144,7 @@ model = "gpt-4o-mini"
 api_key_env = "OPENAI_API_KEY"
 ```
 
-Add any OpenAI-compatible endpoint with `type = "openai"`. Switch the active provider via `provider = "…"` in settings, `TRANSLATE_PROVIDER` / `TRANSLATE_MODEL`, CLI `--provider`, or the footer dropdown.
+Add any OpenAI-compatible endpoint with `type = "openai"`. Switch the active provider via `provider = "…"` in settings, `TRANSLATE_PROVIDER` / `TRANSLATE_MODEL`, CLI `--provider`, or the footer dropdown. Providers accept optional `timeout`, `temperature`, and `max_tokens` keys.
 
 ### OCR engine
 
@@ -159,6 +179,24 @@ chmod 600 config/secrets.toml
 
 `auto` detects English, Chinese, Japanese, Korean, and Russian from Unicode scripts; languages sharing the Latin script (French, German, Spanish) are selectable manually. `auto` on the target side picks the peer language (English pairs with Chinese, everything else defaults to English). Override with `--from` / `--to` or `TRANSLATE_FROM` / `TRANSLATE_TO`.
 
+### History, speech, memory
+
+```toml
+[history]
+enabled = true              # record translations locally (default)
+
+[tts]
+provider = "openai"         # enables the speaker button (OpenAI-compatible TTS)
+
+[memory]
+enabled = false             # opt-in: remember languages per app class
+
+[app]
+lang = "zh_CN"              # UI language; unset follows the system locale
+```
+
+With `[memory] enabled = true` and both language dropdowns set to auto, the focused window's Hyprland class biases detection from recorded votes; every auto translation records a vote (last 500 kept, cache dir).
+
 ## Privacy
 
 - API keys belong only in `secrets.toml` (gitignored) or environment variables; they are never logged.
@@ -177,7 +215,12 @@ ruff check .
 mypy
 ```
 
-CI runs lint, typecheck, and tests on every push. Runtime behavior (popup, OCR, layer-shell placement) needs a real Wayland session.
+CI runs lint, typecheck, and tests on every push. Runtime behavior (popup, OCR, layer-shell placement) needs a real Wayland session. After editing `linago/locale/**/*.po`, regenerate the catalog:
+
+```bash
+msgfmt -o linago/locale/zh_CN/LC_MESSAGES/linago.mo \
+       linago/locale/zh_CN/LC_MESSAGES/linago.po
+```
 
 ## Project layout
 

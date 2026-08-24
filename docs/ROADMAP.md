@@ -5,31 +5,20 @@ horizon. Anything shipped moves to the changelog.
 
 ## Near term
 
-- **GUI smoke test in CI** — install GTK 4 + gtk4-layer-shell GIRs on
-  the Ubuntu runner and import `linago.ui` to catch binding breakage;
-  unit tests currently cover only the GTK-free modules.
-- **AUR package** — PKGBUILD consuming sdist/wheel tags; `run.sh`
-  remains for checkout use.
-- **UI string i18n** — popup labels are hardcoded Chinese; extract
-  with gettext so English locales are possible.
-- **Per-provider request options** — timeout, temperature, and max
-  tokens configurable per provider entry.
-
-## Mid term
-
-- **Resident daemon mode** — a single-instance process holding the
-  GTK loop warm, triggered over a Unix socket; removes per-invocation
-  startup latency from hotkey binds.
-- **Translation history** — local record of source/target pairs with
-  search; pinned card that survives popup close.
-- **Text-to-speech** — pronounce source or translation via an
-  OpenAI-compatible TTS endpoint or a local engine.
+- **Runtime QA pass on Hyprland** — daemon window replacement, pin
+  toggle, TTS playback, and multi-monitor placement were built against
+  unit-tested cores but need a real session before tagging.
+- **PyPI publication** — configure trusted publishing so the release
+  workflow can upload wheels; AUR PKGBUILD then switches to the PyPI
+  source.
 
 ## Exploratory
 
-- **IPC broadcast** — publish translations on a Unix socket for
-  consumers like OBS overlays or log pipelines.
-- **Per-application language memory** — bias auto detection using
-  `hyprctl activewindow` class (e.g. terminal → English, IM → Chinese).
-- **Multi-region capture** — stitch several selected regions into one
-  OCR pass.
+- **History search UI** — full-text filter over recorded translations
+  inside the popup instead of the CLI listing only.
+- **Streaming vision OCR** — transcribe progressively like text
+  translation instead of one blocking call.
+- **Waybar integration** — surface daemon state and last translation
+  summary in the bar.
+- **Multi-language batch actions** — run several configured actions
+  over the same source text in parallel panes.

@@ -4,6 +4,28 @@ All notable changes to LinaGo are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Resident daemon (`--daemon`) with transparent request forwarding and
+  a Unix socket protocol; subscribers receive one JSON event line per
+  completed translation.
+- Multi-region capture (`--ocr-multi`) joining recognized blocks into
+  one translation.
+- Local translation history: `--history [N]`, `--history-clear`,
+  `[history] enabled` opt-out.
+- Speech synthesis for translations via OpenAI-compatible
+  `/audio/speech`; `[tts] provider` gates the popup control.
+- Opt-in per-application language memory (`[memory] enabled`)
+  biasing auto detection by the focused window's Hyprland class.
+- Per-provider request options: `timeout`, `temperature`,
+  `max_tokens`.
+- gettext catalogs for UI strings; `[app] lang` / `LINAGO_LANG`
+  override the system locale.
+- GUI smoke-test job importing the GTK stack in CI; release workflow
+  attaching sdist/wheel to GitHub Releases; AUR package template.
+
 ## [0.3.0] - 2026-08-24
 
 ### Added
