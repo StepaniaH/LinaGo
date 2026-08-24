@@ -27,6 +27,9 @@ class Provider:
     base_url: str
     model: str
     api_key: str | None = None
+    timeout_s: int | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
 
     @property
     def display(self) -> str:
@@ -118,6 +121,17 @@ def _resolve_api_key(name: str, entry: dict, secrets: dict) -> str | None:
     return convention or None
 
 
+def _optional_number(entry: dict, key: str, cast) -> float | int | None:
+    raw = entry.get(key)
+    if raw is None or raw == "":
+        return None
+    try:
+        value = cast(raw)
+        return value if value >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def load_config(
     settings: dict,
     secrets: dict | None = None,
@@ -149,6 +163,9 @@ def load_config(
             base_url=base_url,
             model=model,
             api_key=_resolve_api_key(name, entry, secrets),
+            timeout_s=_optional_number(entry, "timeout", int),
+            temperature=_optional_number(entry, "temperature", float),
+            max_tokens=_optional_number(entry, "max_tokens", int),
         )
 
     if not providers:

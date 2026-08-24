@@ -29,14 +29,15 @@ def stream_completion(
     on_token: TokenCallback,
     cancel,
     *,
-    timeout: int = 120,
+    timeout: int | None = None,
 ) -> None:
     """Blocking stream; call from a worker thread. Invokes on_token(full)."""
     provider.require_ready()
+    effective_timeout = provider.timeout_s or timeout or 120
     if provider.type == "ollama":
-        _stream_ollama(provider, prompt, on_token, cancel, timeout)
+        _stream_ollama(provider, prompt, on_token, cancel, effective_timeout)
     elif provider.type == "openai":
-        _stream_openai(provider, prompt, on_token, cancel, timeout)
+        _stream_openai(provider, prompt, on_token, cancel, effective_timeout)
     else:
         raise RuntimeError(f"unsupported provider type: {provider.type}")
 
@@ -80,9 +81,17 @@ def _post_with_retry(
 def _stream_ollama(provider, prompt, on_token, cancel, timeout):
     url = f"{provider.base_url}/api/generate"
     logger.debug("ollama request: model=%s", provider.model)
+    body: dict = {"model": provider.model, "prompt": prompt, "stream": True}
+    options: dict = {}
+    if provider.temperature is not None:
+        options["temperature"] = provider.temperature
+    if provider.max_tokens is not None:
+        options["num_predict"] = provider.max_tokens
+    if options:
+        body["options"] = options
     resp = _post_with_retry(
         url,
-        json={"model": provider.model, "prompt": prompt, "stream": True},
+        json=body,
         stream=True,
         timeout=timeout,
     )
@@ -117,8 +126,10 @@ def _stream_openai(provider, prompt, on_token, cancel, timeout):
         "model": provider.model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": True,
-        "temperature": 0.2,
+        "temperature": 0.2 if provider.temperature is None else provider.temperature,
     }
+    if provider.max_tokens is not None:
+        payload["max_tokens"] = provider.max_tokens
     logger.debug("openai-compatible request: model=%s", provider.model)
     resp = _post_with_retry(
         url, headers=headers, json=payload, stream=True, timeout=timeout

@@ -183,3 +183,40 @@ class TestSecretPermissions:
         monkeypatch.setattr(config, "find_config_dir", lambda: tmp_path / "config")
         warn_secret_permissions()
         assert capsys.readouterr().err == ""
+
+
+def test_provider_request_options_parsing():
+    settings = {
+        "providers": {
+            "plain": {"type": "ollama", "base_url": "u", "model": "m"},
+            "tuned": {
+                "type": "openai",
+                "base_url": "u2",
+                "model": "m2",
+                "timeout": 30,
+                "temperature": 0.5,
+                "max_tokens": 1024,
+                "api_key_env": "T_KEY",
+            },
+            "garbage": {
+                "type": "openai",
+                "base_url": "u3",
+                "model": "m3",
+                "timeout": "soon",
+                "temperature": -1,
+            },
+        }
+    }
+    cfg = load_config(settings)
+    plain = cfg.get("plain")
+    assert (plain.timeout_s, plain.temperature, plain.max_tokens) == (
+        None,
+        None,
+        None,
+    )
+    tuned = cfg.get("tuned")
+    assert tuned.timeout_s == 30
+    assert tuned.temperature == 0.5
+    assert tuned.max_tokens == 1024
+    bad = cfg.get("garbage")
+    assert bad.timeout_s is None and bad.temperature is None

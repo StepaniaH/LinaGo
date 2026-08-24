@@ -304,3 +304,73 @@ class TestRetry:
         with pytest.raises(backends.requests.HTTPError):
             backends._post_with_retry("https://x.test")
         assert sleeps == []
+
+
+class TestProviderOptions:
+    def _provider(self, type_: str = "openai", **opts) -> Provider:
+        return Provider(
+            name="p",
+            type=type_,
+            label="P",
+            base_url="https://p.test",
+            model="m",
+            api_key="k-test" if type_ == "openai" else None,
+            **opts,
+        )
+
+    def test_openai_temperature_default_and_override(self, monkeypatch):
+        captured: dict = {}
+
+        def fake_post(url, **kw):
+            captured["payload"] = kw["json"]
+            return StubResponse(_sse({"delta": {"content": "x"}}))
+
+        monkeypatch.setattr(backends.requests, "post", fake_post)
+
+        cancel = threading.Event()
+        _stream_openai(self._provider(), "p", lambda t: None, cancel, 30)
+        assert captured["payload"]["temperature"] == 0.2
+        assert "max_tokens" not in captured["payload"]
+
+        _stream_openai(
+            self._provider(temperature=0.7, max_tokens=256),
+            "p",
+            lambda t: None,
+            threading.Event(),
+            30,
+        )
+        assert captured["payload"]["temperature"] == 0.7
+        assert captured["payload"]["max_tokens"] == 256
+
+    def test_ollama_options_mapping(self, monkeypatch):
+        captured: dict = {}
+
+        def fake_post(url, **kw):
+            captured["url"] = url
+            captured["body"] = kw["json"]
+            return StubResponse([json.dumps({"response": "y", "done": True})])
+
+        monkeypatch.setattr(backends.requests, "post", fake_post)
+        p = self._provider("ollama", temperature=0.3, max_tokens=64)
+        _stream_ollama(p, "p", lambda t: None, threading.Event(), 30)
+        assert captured["body"]["options"] == {
+            "temperature": 0.3,
+            "num_predict": 64,
+        }
+
+    def test_provider_timeout_wins_over_default(self, monkeypatch):
+        seen: dict = {}
+
+        def fake_retry(url, **kw):
+            seen["timeout"] = kw["timeout"]
+            return StubResponse(_sse({"delta": {"content": "x"}}))
+
+        monkeypatch.setattr(backends, "_post_with_retry", fake_retry)
+        stream_completion(
+            self._provider(timeout_s=7), "p", lambda t: None, threading.Event()
+        )
+        assert seen["timeout"] == 7
+
+        seen.clear()
+        stream_completion(self._provider(), "p", lambda t: None, threading.Event())
+        assert seen["timeout"] == 120
