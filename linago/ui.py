@@ -8,6 +8,7 @@ machines without a Wayland stack.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import threading
@@ -21,7 +22,7 @@ gi.require_version("Gtk4LayerShell", "1.0")
 from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell  # noqa: E402
 
 from linago.backends import stream_completion  # noqa: E402
-from linago.config import AppConfig  # noqa: E402
+from linago.config import AppConfig, OcrSettings  # noqa: E402
 from linago.i18n import _  # noqa: E402
 from linago.lang import (  # noqa: E402
     LANGUAGES,
@@ -34,7 +35,13 @@ from linago.lang import (  # noqa: E402
     opposite_lang,
     resolve_pair,
 )
-from linago.ocr import forward_to_translation  # noqa: E402
+from linago.ocr import (  # noqa: E402
+    capture_region,
+    forward_to_translation,
+    make_ocr_runner,
+    read_primary_selection,
+)
+from linago.paths import cache_dir  # noqa: E402
 from linago.placement import (  # noqa: E402
     BODY_PAD_V,
     active_monitor,
@@ -60,12 +67,20 @@ def translate_stream(
     on_token,
     cancel: threading.Event,
     template: str | None = None,
+    on_done=None,
 ):
-    """Run translation via the active provider in a daemon thread."""
+    """Run translation via the active provider in a daemon thread.
+
+    ``on_done(final_text)`` fires once on the UI thread after an
+    uncancelled stream produced output.
+    """
     prompt = build_prompt(text, pair, template)
 
     def _worker():
+        latest = {"full": ""}
+
         def _ui_token(full: str):
+            latest["full"] = full
             GLib.idle_add(_emit, on_token, normalize_text(full))
 
         try:
@@ -73,7 +88,16 @@ def translate_stream(
         except Exception as exc:
             logging.getLogger(__name__).error("translation failed: %s", exc)
             if not cancel.is_set():
-                GLib.idle_add(_emit, on_token, _("Translation failed: {}").format(exc))
+                GLib.idle_add(
+                    _emit,
+                    on_token,
+                    _("Translation failed: {}").format(exc),
+                )
+            return
+
+        final = normalize_text(latest["full"])
+        if not cancel.is_set() and final and on_done is not None:
+            GLib.idle_add(_emit, on_done, final)
 
     threading.Thread(target=_worker, daemon=True).start()
 
@@ -266,6 +290,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         action_name: str | None = None,
         config: AppConfig | None = None,
         provider_name: str | None = None,
+        completion_cb: Callable[[dict], None] | None = None,
     ):
         super().__init__(application=app, title=_("Translate"))
         self._source_text = source_text
@@ -278,6 +303,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._action_name = action_name if action_name in self._actions else None
         self._config = config or load_app_config()
         self._provider_name = provider_name or self._config.active
+        self._completion_cb = completion_cb
         self._closed = False
         self._cancel = threading.Event()
         self._gen = 0
@@ -787,6 +813,9 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._gen += 1
         gen = self._gen
         pair = self._current_pair()
+        provider = self._provider()
+        template = self._current_template()
+        action = self._action_name
         self._refresh_pair_labels()
 
         def _on_token(full_result: str):
@@ -794,13 +823,33 @@ class TranslateWindow(Gtk.ApplicationWindow):
                 return
             self._on_token(full_result)
 
+        def _on_done(final_text: str):
+            if gen != self._gen:
+                return
+            if self._completion_cb is not None:
+                try:
+                    self._completion_cb(
+                        {
+                            "event": "translation",
+                            "source": self._source_text,
+                            "translated": final_text,
+                            "source_lang": pair.source,
+                            "target_lang": pair.target,
+                            "provider": provider.name,
+                            "action": action,
+                        }
+                    )
+                except Exception:
+                    logging.getLogger(__name__).exception("completion callback failed")
+
         translate_stream(
-            self._provider(),
+            provider,
             self._source_text,
             pair,
             _on_token,
             self._cancel,
-            template=self._current_template(),
+            template=template,
+            on_done=_on_done,
         )
         return False
 
@@ -841,6 +890,8 @@ class TranslateApp(Gtk.Application):
         action_name: str | None = None,
         config: AppConfig | None = None,
         provider_name: str | None = None,
+        ocr_settings: OcrSettings | None = None,
+        resident: bool = False,
     ):
         super().__init__(application_id="io.github.stepaniah.linago")
         self._source_text = source_text
@@ -853,22 +904,91 @@ class TranslateApp(Gtk.Application):
         self._action_name = action_name
         self._config = config or load_app_config()
         self._provider_name = provider_name or self._config.active
+        self._ocr_settings = ocr_settings
+        self._resident = resident
+        self._window: TranslateWindow | None = None
+        self.event_publisher = None  # set by run_resident()
 
     def do_activate(self):
-        win = TranslateWindow(
-            self,
-            self._source_text,
-            self._translate,
+        if self._resident:
+            # Keep the main loop alive between popups.
+            self.hold()
+            return
+        self._open_window(
+            source_text=self._source_text,
+            translate=self._translate,
             pending_png=self._pending_png,
             ocr_runner=self._ocr_runner,
             from_lang=self._from_lang,
             to_lang=self._to_lang,
-            actions=self._actions,
             action_name=self._action_name,
+        )
+
+    def _open_window(
+        self,
+        *,
+        source_text,
+        translate,
+        pending_png=None,
+        ocr_runner=None,
+        from_lang="auto",
+        to_lang="auto",
+        action_name=None,
+    ):
+        if self._window is not None and not self._window._closed:
+            self._window.close()
+        self._window = TranslateWindow(
+            self,
+            source_text,
+            translate,
+            pending_png=pending_png,
+            ocr_runner=ocr_runner,
+            from_lang=from_lang,
+            to_lang=to_lang,
+            actions=self._actions,
+            action_name=action_name,
             config=self._config,
             provider_name=self._provider_name,
+            completion_cb=(self.event_publisher if self.event_publisher else None),
         )
-        win.present()
+        self._window.present()
+
+    def present_payload(self, payload: dict) -> bool:
+        """Open a popup for a daemon request (runs on the UI thread)."""
+        kind = payload.get("kind")
+        engine = self._ocr_settings.engine if self._ocr_settings else "tesseract"
+        engine = payload.get("engine") or engine
+        if kind == "translate":
+            text = payload.get("text")
+            if text is None:
+                return False
+            self._open_window(
+                source_text=normalize_text(text),
+                translate=True,
+            )
+        elif kind == "selection":
+            selected = read_primary_selection()
+            if not selected or not selected.strip():
+                return False
+            self._open_window(
+                source_text=normalize_text(selected),
+                translate=True,
+            )
+        elif kind == "ocr":
+            png = capture_region(cache_dir())
+            runner = make_ocr_runner(
+                png,
+                engine=engine,
+                ocr_cfg=self._ocr_settings or OcrSettings(),
+                get_provider=self._config.get,
+            )
+            self._open_window(
+                source_text=_("Recognizing..."),
+                translate=True,
+                pending_png=png,
+                ocr_runner=runner,
+            )
+        return False
 
 
 def run_app(
@@ -898,3 +1018,48 @@ def run_app(
         provider_name=provider_name,
     )
     return app.run(None)
+
+
+def run_resident(
+    *,
+    config: AppConfig,
+    ocr_settings: OcrSettings,
+    actions: dict[str, str],
+    action_name: str | None = None,
+    provider_name: str | None = None,
+    socket_path: str,
+) -> int:
+    """Serve socket requests until the process is terminated."""
+    import sys as _sys
+
+    from linago import daemon
+
+    app = TranslateApp(
+        "",
+        translate=False,
+        actions=actions,
+        action_name=action_name,
+        config=config,
+        provider_name=provider_name,
+        ocr_settings=ocr_settings,
+        resident=True,
+    )
+
+    server = daemon.Server(socket_path, on_request=app.present_payload)
+    app.event_publisher = server.events.publish
+
+    try:
+        server.start()
+    except RuntimeError as exc:
+        print(str(exc), file=_sys.stderr)
+        return 1
+
+    try:
+        code = app.run(None)
+    finally:
+        server.stop()
+        try:
+            os.unlink(socket_path)
+        except OSError:
+            pass
+    return code

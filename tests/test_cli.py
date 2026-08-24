@@ -172,22 +172,6 @@ class TestSelection:
         args = cli.build_parser(["prov_a"]).parse_args(["--selection"])
         assert args.selection is True
 
-    def test_read_primary_selection_variants(self, monkeypatch):
-        ok = types.SimpleNamespace(returncode=0, stdout=" picked \n", stderr="")
-        empty = types.SimpleNamespace(returncode=1, stdout="", stderr="empty")
-
-        monkeypatch.setattr(cli.subprocess, "run", lambda cmd, **kw: ok)
-        assert cli.read_primary_selection() == " picked \n"
-
-        monkeypatch.setattr(cli.subprocess, "run", lambda cmd, **kw: empty)
-        assert cli.read_primary_selection() is None
-
-        def missing(cmd, **kw):
-            raise FileNotFoundError("wl-paste")
-
-        monkeypatch.setattr(cli.subprocess, "run", missing)
-        assert cli.read_primary_selection() is None
-
     def test_wl_paste_is_required(self, monkeypatch, capsys):
         monkeypatch.setattr(cli.shutil, "which", lambda name: None)
         with pytest.raises(SystemExit):
@@ -199,6 +183,7 @@ class TestSelection:
         self, fake_ui, config_dir, monkeypatch, capsys
     ):
         monkeypatch.setattr(cli.shutil, "which", lambda n: "/usr/bin/" + n)
+        monkeypatch.setattr(cli, "read_primary_selection", lambda: "")
         assert cli.main(["--selection"]) == 1
         assert fake_ui == {}
         assert "Primary selection" in capsys.readouterr().err
@@ -206,11 +191,7 @@ class TestSelection:
     def test_selection_reaches_ui_normalized(self, fake_ui, config_dir, monkeypatch):
         monkeypatch.setattr(cli.shutil, "which", lambda n: "/usr/bin/" + n)
         monkeypatch.setattr(
-            cli.subprocess,
-            "run",
-            lambda cmd, **kw: types.SimpleNamespace(
-                returncode=0, stdout="héllo\n\n\nworld\r\n", stderr=""
-            ),
+            cli, "read_primary_selection", lambda: "héllo\n\n\nworld\r\n"
         )
         assert cli.main(["--selection", "--translate"]) == 0
         assert fake_ui["source_text"] == "héllo\nworld"
@@ -258,7 +239,7 @@ class TestOcrEngine:
             return "V"
 
         monkeypatch.setattr(cli.ocr_mod, "run_tesseract", fake_tess)
-        monkeypatch.setattr(cli, "vision_ocr", fake_vision)
+        monkeypatch.setattr(cli.ocr_mod, "vision_ocr", fake_vision)
 
         rc = cli.main(["--ocr", "--ocr-engine", "vision"])
         assert rc == 0

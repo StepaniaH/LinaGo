@@ -55,6 +55,8 @@ files = [
     "linago/backends.py",
     "linago/ocr.py",
     "linago/cli.py",
+    "linago/i18n.py",
+    "linago/daemon.py",
     "tests",
 ]
 warn_unused_ignores = true

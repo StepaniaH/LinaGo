@@ -11,11 +11,9 @@ import argparse
 import logging
 import os
 import shutil
-import subprocess
 import sys
 
 from linago import ocr as ocr_mod
-from linago.backends import vision_ocr
 from linago.config import (
     load_actions,
     load_config,
@@ -23,9 +21,11 @@ from linago.config import (
     load_settings,
     warn_secret_permissions,
 )
+from linago.daemon import daemon_alive, default_socket_path, send_request
 from linago.i18n import _
 from linago.i18n import install as install_i18n
 from linago.lang import SOURCE_CHOICES, normalize_text
+from linago.ocr import read_primary_selection
 from linago.paths import cache_dir
 
 REQUIRED_BINS = {
@@ -150,6 +150,25 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
         action="store_true",
         help=_("Verbose logging (also written to linago.log in the cache dir)"),
     )
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help=_(
+            "Run resident: keep serving requests on a socket so later "
+            "invocations pop up instantly"
+        ),
+    )
+    parser.add_argument(
+        "--socket",
+        type=str,
+        default=None,
+        help=_("Daemon socket path (default under XDG_RUNTIME_DIR)"),
+    )
+    parser.add_argument(
+        "--no-forward",
+        action="store_true",
+        help=_("Never forward to an already-running daemon"),
+    )
     return parser
 
 
@@ -178,23 +197,25 @@ def setup_logging(*, verbose: bool) -> None:
         logger.setLevel(logging.WARNING)
 
 
-def read_primary_selection() -> str | None:
-    """Primary-selection text via wl-paste; None when unavailable/empty.
-
-    wl-clipboard exits non-zero when the selection is empty, which is
-    reported the same way as a missing tool: nothing to translate.
-    """
-    try:
-        proc = subprocess.run(
-            ["wl-paste", "--primary", "--no-newline"],
-            capture_output=True,
-            text=True,
-        )
-    except OSError:
-        return None
-    if proc.returncode != 0:
-        return None
-    return proc.stdout or None
+def request_from_args(args: argparse.Namespace) -> dict:
+    """Serialize an invocation into a daemon socket command."""
+    if args.ocr:
+        msg: dict = {"cmd": "ocr"}
+    elif args.selection:
+        msg = {"cmd": "selection"}
+    else:
+        msg = {"cmd": "translate", "text": args.text}
+    if args.from_lang:
+        msg["from"] = args.from_lang
+    if args.to_lang:
+        msg["to"] = args.to_lang
+    if args.provider:
+        msg["provider"] = args.provider
+    if args.action:
+        msg["action"] = args.action
+    if args.ocr_engine:
+        msg["engine"] = args.ocr_engine
+    return msg
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -214,6 +235,24 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser(config.names()).parse_args(argv)
     setup_logging(verbose=args.verbose)
 
+    socket_path = args.socket or default_socket_path()
+
+    # Transparent daemon handoff: when a resident instance answers,
+    # forward the request and exit; the popup is shown over there.
+    if not args.daemon and not args.no_forward:
+        try:
+            if daemon_alive(socket_path):
+                reply = send_request(socket_path, request_from_args(args))
+                if reply.get("ok"):
+                    return 0
+                print(
+                    _("daemon rejected the request: {}").format(reply.get("error", "")),
+                    file=sys.stderr,
+                )
+                return 1
+        except OSError:
+            logging.getLogger(__name__).debug("daemon probe failed", exc_info=True)
+
     if args.action and args.action not in actions:
         available = ", ".join(actions) or "（未定义）"
         print(
@@ -223,6 +262,31 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+
+    if args.action and args.action not in actions:
+        available = ", ".join(actions) or _("(none)")
+        print(
+            _("Unknown action '{}'; defined under [actions]: {}").format(
+                args.action, available
+            ),
+            file=sys.stderr,
+        )
+        return 2
+
+    default_action = (settings.get("app") or {}).get("action")
+    action_name = args.action or (str(default_action) if default_action else None)
+
+    if args.daemon:
+        from linago.ui import run_resident  # needs GTK + layer-shell
+
+        return run_resident(
+            config=config,
+            ocr_settings=ocr_cfg,
+            actions=actions,
+            action_name=action_name,
+            provider_name=args.provider or config.active,
+            socket_path=socket_path,
+        )
 
     engine = resolve_ocr_engine(args.ocr_engine, ocr_cfg.engine)
     check_dependencies(
@@ -236,19 +300,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.ocr:
         pending_png = ocr_mod.capture_region(cache_dir())
         source_text = _("Recognizing...")
-        if engine == "vision":
-            vision_provider = (
-                config.get(ocr_cfg.provider) if ocr_cfg.provider else config.get()
-            )
-
-            def ocr_runner(png=pending_png, vp=vision_provider):
-                return vision_ocr(vp, png)
-
-        else:
-            langs = ocr_cfg.tesseract_langs
-
-            def ocr_runner(png=pending_png, langs=langs):
-                return ocr_mod.run_tesseract(png, langs)
+        ocr_runner = ocr_mod.make_ocr_runner(
+            pending_png,
+            engine=engine,
+            ocr_cfg=ocr_cfg,
+            get_provider=config.get,
+        )
 
     elif args.selection:
         selected = read_primary_selection()
@@ -278,9 +335,6 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     from linago.ui import run_app  # imported late: needs GTK + layer-shell
-
-    default_action = (settings.get("app") or {}).get("action")
-    action_name = args.action or (str(default_action) if default_action else None)
 
     return run_app(
         source_text,

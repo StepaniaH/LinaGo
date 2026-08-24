@@ -13,11 +13,14 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
 from linago.i18n import _
 from linago.paths import find_config_dir
 
 SUPPORTED_TYPES = ("ollama", "openai")
+
+_T = TypeVar("_T", int, float)
 
 
 @dataclass(frozen=True)
@@ -125,7 +128,7 @@ def _resolve_api_key(name: str, entry: dict, secrets: dict) -> str | None:
     return convention or None
 
 
-def _optional_number(entry: dict, key: str, cast) -> float | int | None:
+def _optional_number(entry: dict, key: str, cast: type[_T]) -> _T | None:
     raw = entry.get(key)
     if raw is None or raw == "":
         return None

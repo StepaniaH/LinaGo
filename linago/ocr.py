@@ -1,11 +1,14 @@
-"""Screen capture (slurp + grim) and Tesseract OCR."""
+"""Screen capture (slurp + grim), primary-selection reads, and OCR."""
 
 from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
+from linago.backends import vision_ocr
+from linago.config import OcrSettings
 from linago.lang import normalize_text
 
 TESSERACT_LANGS_DEFAULT = "chi_sim+eng"
@@ -56,3 +59,51 @@ def forward_to_translation(text: str | None) -> bool:
     noise. The popup still shows what happened in the source pane.
     """
     return bool(text and text.strip())
+
+
+def read_primary_selection() -> str | None:
+    """Primary-selection text via wl-paste; None when unavailable/empty.
+
+    wl-clipboard exits non-zero when the selection is empty, which is
+    reported the same way as a missing tool: nothing to translate.
+    """
+    try:
+        proc = subprocess.run(
+            ["wl-paste", "--primary", "--no-newline"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout or None
+
+
+def make_ocr_runner(
+    png: Path,
+    *,
+    engine: str,
+    ocr_cfg: OcrSettings,
+    get_provider: Callable[[str | None], object],
+) -> Callable[[], str | None]:
+    """Build the zero-arg OCR callable for a captured screenshot.
+
+    ``get_provider`` resolves the vision provider by name (None meaning
+    the active one); both engine branches return str | None with the
+    failure contract of run_tesseract/vision_ocr.
+    """
+    if engine == "vision":
+        provider = get_provider(ocr_cfg.provider)
+
+        def vision_runner():
+            return vision_ocr(provider, png)
+
+        return vision_runner
+
+    langs = ocr_cfg.tesseract_langs
+
+    def tesseract_runner():
+        return run_tesseract(png, langs)
+
+    return tesseract_runner

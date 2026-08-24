@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import types
 from pathlib import Path
 
 import linago.ocr as ocr
@@ -66,3 +67,22 @@ class TestForwardPolicy:
 
     def test_recognized_text_is_forwarded(self):
         assert ocr.forward_to_translation("hello") is True
+
+
+class TestPrimarySelection:
+    def test_reads_stdout(self, monkeypatch):
+        ns = types.SimpleNamespace(returncode=0, stdout=" picked \n")
+        monkeypatch.setattr(ocr.subprocess, "run", lambda cmd, **kw: ns)
+        assert ocr.read_primary_selection() == " picked \n"
+
+    def test_empty_exit_code_means_none(self, monkeypatch):
+        ns = types.SimpleNamespace(returncode=1, stdout="", stderr="empty")
+        monkeypatch.setattr(ocr.subprocess, "run", lambda cmd, **kw: ns)
+        assert ocr.read_primary_selection() is None
+
+    def test_missing_tool_means_none(self, monkeypatch):
+        def missing(cmd, **kw):
+            raise FileNotFoundError("wl-paste")
+
+        monkeypatch.setattr(ocr.subprocess, "run", missing)
+        assert ocr.read_primary_selection() is None
