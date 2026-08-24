@@ -1,0 +1,119 @@
+/* LinaGo console — neutral dark shell, independent of popup theming */
+:root {
+  --bg: #141416;
+  --panel: #1d1d21;
+  --line: #2b2b31;
+  --fg: #e4e4e8;
+  --muted: #9a9aa4;
+  --accent: #6ea8ff;
+  --ok: #58c08a;
+  --bad: #e06c6c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  max-width: 960px;
+  padding: 0 20px 60px;
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+h1 { font-size: 18px; margin: 0; }
+h1 .sub { color: var(--muted); font-weight: 400; }
+.spacer { flex: 1; }
+.hidden { display: none !important; }
+
+#tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+#tabs button {
+  background: none; border: none; color: var(--muted);
+  padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+}
+#tabs button.active { background: var(--panel); color: var(--fg); }
+#tabs button:hover { color: var(--fg); }
+
+main section.tab { padding-top: 24px; }
+h2 { font-size: 15px; margin: 0 0 14px; color: var(--muted); font-weight: 600; }
+h3 { font-size: 13px; color: var(--muted); }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.row { display: flex; gap: 10px; align-items: center; }
+.row.head { justify-content: space-between; }
+.row.end { justify-content: flex-end; margin-top: 10px; }
+.row.wrap { flex-wrap: wrap; }
+.cols { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 18px; align-items: start; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+label { display: block; margin: 10px 0; color: var(--muted); font-size: 12px; }
+label.check { display: flex; gap: 8px; align-items: center; }
+input, select, textarea {
+  width: 100%; margin-top: 4px; padding: 7px 9px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 8px; font: inherit;
+}
+input[type="checkbox"], input[type="radio"], input[type="color"] { width: auto; }
+fieldset { border: none; padding: 0; margin: 0 0 10px; }
+legend { color: var(--muted); font-size: 12px; }
+fieldset label { display: inline-flex; margin-right: 14px; }
+
+button {
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 12px; cursor: pointer; font-size: 13px;
+}
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #10131a; font-weight: 600; }
+button.danger { color: var(--bad); }
+
+table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); font-size: 13px; }
+th { color: var(--muted); font-weight: 500; }
+
+.badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+.badge.on { background: rgba(88, 192, 138, .15); color: var(--ok); }
+.badge.off { background: rgba(224, 108, 108, .12); color: var(--bad); }
+
+.check-list label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--fg); }
+
+.hint { color: var(--muted); font-size: 12px; }
+.error { color: var(--bad); font-size: 12px; }
+
+.gate {
+  position: fixed; inset: 0; display: flex;
+  align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .55);
+}
+.gate-card { width: 340px; }
+.gate-card input { margin: 10px 0; }
+
+.preview { min-height: 240px; position: sticky; top: 20px; }
+.pv-header { display: flex; justify-content: space-between; opacity: .9; }
+.pv-title { font-weight: 600; letter-spacing: .5px; }
+.pv-label { font-size: 11px; font-weight: 600; margin-top: 12px; }
+.pv-source { margin-top: 4px; line-height: 1.6; }
+.pv-text { margin-top: 4px; line-height: 1.7; }
+
+textarea { min-height: 64px; resize: vertical; font-family: ui-monospace, monospace; }
+
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--panel); border: 1px solid var(--line);
+  padding: 10px 16px; border-radius: 10px; font-size: 13px;
+}

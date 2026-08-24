@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LinaGo Console</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>LinaGo <span class="sub">console</span></h1>
+  <nav id="tabs">
+    <button data-tab="providers" class="active">Providers</button>
+    <button data-tab="compare">Compare</button>
+    <button data-tab="appearance">Appearance</button>
+    <button data-tab="language">Language</button>
+    <button data-tab="hotkeys">Hotkeys</button>
+    <button data-tab="diagnostics">Diagnostics</button>
+  </nav>
+  <div class="spacer"></div>
+  <button id="lang-toggle">EN</button>
+</header>
+
+<div id="gate" class="gate hidden">
+  <div class="card gate-card">
+    <h2 data-i18n="gate.title">访问令牌</h2>
+    <p data-i18n="gate.hint">粘贴缓存目录中 web-token 文件里的内容。</p>
+    <input id="gate-token" type="password" autocomplete="off">
+    <button id="gate-submit" class="primary" data-i18n="gate.submit">解锁</button>
+    <p id="gate-error" class="error"></p>
+  </div>
+</div>
+
+<main>
+  <!-- Providers -->
+  <section id="tab-providers" class="tab active">
+    <div class="row head">
+      <h2 data-i18n="providers.title">Providers / BYOK</h2>
+      <button id="prov-new" class="primary" data-i18n="providers.new">新建</button>
+    </div>
+    <table id="prov-table">
+      <thead><tr><th data-i18n="f.name">名称</th><th>type</th><th>model</th><th>key</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <form id="prov-form" class="hidden card">
+      <h3 id="prov-form-title"></h3>
+      <label>name <input name="name" required pattern="[A-Za-z0-9_-]{1,32}"></label>
+      <label>type
+        <select name="type">
+          <option value="openai">openai</option>
+          <option value="ollama">ollama</option>
+        </select>
+      </label>
+      <label>label <input name="label"></label>
+      <label>base_url <input name="base_url" placeholder="https://api.example.com/v1" required></label>
+      <label>model <input name="model" required></label>
+      <div class="grid3">
+        <label>timeout <input name="timeout" type="number" min="1" placeholder="120"></label>
+        <label>temperature <input name="temperature" type="number" step="0.1" min="0" max="2"></label>
+        <label>max_tokens <input name="max_tokens" type="number" min="1"></label>
+      </div>
+      <label>API key <input name="api_key" type="password" autocomplete="off" data-i18n-ph="providers.key_ph"></label>
+      <div class="row end">
+        <button type="button" id="prov-cancel" data-i18n="cancel">取消</button>
+        <button type="submit" class="primary" data-i18n="save">保存</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Compare -->
+  <section id="tab-compare" class="tab hidden">
+    <h2 data-i18n="compare.title">对比输出</h2>
+    <p class="hint" data-i18n="compare.hint">勾选参与对比的 provider（最多 4 个）。留空则只使用默认 provider。</p>
+    <div id="compare-list" class="check-list"></div>
+    <button id="compare-save" class="primary" data-i18n="save">保存</button>
+  </section>
+
+  <!-- Appearance -->
+  <section id="tab-appearance" class="tab hidden">
+    <h2 data-i18n="appearance.title">外观</h2>
+    <div class="cols">
+      <form id="appear-form" class="card">
+        <fieldset>
+          <legend>preset</legend>
+          <label><input type="radio" name="preset" value="dark"> dark</label>
+          <label><input type="radio" name="preset" value="midnight"> midnight</label>
+          <label><input type="radio" name="preset" value="paper"> paper</label>
+        </fieldset>
+        <label>accent <input type="color" name="accent" value="#888888"></label>
+        <label>bg_alpha <output name="bg-alpha-out">0.94</output>
+          <input type="range" name="bg_alpha" min="0.3" max="1" step="0.01"></label>
+        <label>font_scale <output name="font-scale-out">1.00</output>
+          <input type="range" name="font_scale" min="0.7" max="1.6" step="0.05"></label>
+        <button type="submit" class="primary" data-i18n="appearance.apply">应用并重渲染样式</button>
+      </form>
+      <div id="preview" class="preview card">
+        <div class="pv-header"><span class="pv-title" data-i18n="preview.title">翻译</span></div>
+        <div class="pv-label" data-i18n="preview.source">原文</div>
+        <div class="pv-source">The quick brown fox.</div>
+        <div class="pv-label" data-i18n="preview.target">译文</div>
+        <div class="pv-text">敏捷的棕色狐狸跳过了懒狗。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Language -->
+  <section id="tab-language" class="tab hidden">
+    <h2 data-i18n="lang.title">语言与动作</h2>
+    <form id="lang-form" class="card">
+      <label>UI lang <input name="lang" placeholder="zh_CN / en / (auto)"></label>
+      <label>OCR engine
+        <select name="ocr_engine"><option>tesseract</option><option>vision</option></select>
+      </label>
+      <label>tesseract langs <input name="tesseract_langs" placeholder="chi_sim+eng"></label>
+      <label>TTS provider <select name="tts_provider"><option value="">—</option></select></label>
+      <label class="check"><input type="checkbox" name="memory_enabled"> memory.enabled</label>
+      <label class="check"><input type="checkbox" name="history_enabled"> history.enabled</label>
+      <label>default action <input name="app_action" placeholder="explain"></label>
+      <button type="submit" class="primary" data-i18n="save">保存</button>
+    </form>
+
+    <h3 data-i18n="actions.title">动作模板</h3>
+    <p class="hint">{source} {target} {text}</p>
+    <table id="actions-table"><tbody></tbody></table>
+    <div class="row">
+      <button id="action-add" data-i18n="actions.add">添加动作</button>
+      <button id="actions-save" class="primary" data-i18n="save">保存动作</button>
+    </div>
+  </section>
+
+  <!-- Hotkeys -->
+  <section id="tab-hotkeys" class="tab hidden">
+    <h2 data-i18n="hotkeys.title">快捷键</h2>
+    <p class="hint" data-i18n="hotkeys.hint">绑定保存在 hyprland.conf 中；这里生成片段供复制。「仅本会话」通过 hyprctl keyword 生效，重载后失效。</p>
+    <label>launcher <input id="hk-launcher" value="/path/to/LinaGo/run.sh"></label>
+    <div id="hk-list"></div>
+    <p id="hk-status" class="hint"></p>
+  </section>
+
+  <!-- Diagnostics -->
+  <section id="tab-diagnostics" class="tab hidden">
+    <h2 data-i18n="diag.title">诊断</h2>
+    <button id="diag-refresh" data-i18n="diag.refresh">重新检查</button>
+    <table id="diag-table">
+      <thead><tr><th>check</th><th>status</th><th>detail</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h3 data-i18n="diag.providers">Provider 连通性</h3>
+    <div id="probe-list" class="row wrap"></div>
+  </section>
+</main>
+
+<div id="toast" class="toast hidden"></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

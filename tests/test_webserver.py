@@ -59,10 +59,20 @@ def _request(base, method, path, token=None, body=None):
         req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, data=data) as resp:
-            return resp.status, json.loads(resp.read() or b"{}")
+            raw = resp.read()
+            if resp.headers.get("Content-Type", "").startswith("application/json"):
+                return resp.status, json.loads(raw or b"{}")
+            return resp.status, raw.decode(errors="replace")
     except urllib.error.HTTPError as err:
         payload = err.read()
-        return err.code, json.loads(payload) if payload else {}
+        ctype = err.headers.get("Content-Type", "")
+        if not payload:
+            body_out: object = {}
+        elif ctype.startswith("application/json"):
+            body_out = json.loads(payload)
+        else:
+            body_out = payload.decode(errors="replace")
+        return err.code, body_out
 
 
 class TestAuth:
@@ -75,10 +85,10 @@ class TestAuth:
         assert status == 401
 
     def test_static_shell_served_without_token(self, console):
-        status, body = _request(console.base, "GET", "/")
-        # static shell is exempt from token auth; content lands with T6
-        assert status != 401
-        assert body.get("error") != "missing or invalid token"
+        status, text = _request(console.base, "GET", "/")
+        # the shell loads without a token; data endpoints stay guarded
+        assert status == 200
+        assert "LinaGo" in text
 
 
 class TestConfigApi:
