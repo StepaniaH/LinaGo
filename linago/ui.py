@@ -19,6 +19,7 @@ from pathlib import Path
 import gi
 
 gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
 from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell  # noqa: E402
 
@@ -361,7 +362,11 @@ class TranslateWindow(Gtk.ApplicationWindow):
     def _setup_layer_shell(self):
         Gtk4LayerShell.init_for_window(self)
         Gtk4LayerShell.set_layer(self, Gtk4LayerShell.Layer.OVERLAY)
-        Gtk4LayerShell.set_keyboard_mode(self, Gtk4LayerShell.KeyboardMode.EXCLUSIVE)
+        # ON_DEMAND: the compositor hands keyboard over on click, so
+        # text selection, shortcuts, and IME work naturally inside the
+        # popup instead of the surface holding a permanent exclusive
+        # grab.
+        Gtk4LayerShell.set_keyboard_mode(self, Gtk4LayerShell.KeyboardMode.ON_DEMAND)
 
         self._avail_h = 600  # refined below or by measured chrome
         try:
@@ -448,7 +453,27 @@ class TranslateWindow(Gtk.ApplicationWindow):
             css.append("pinned")
         btn.set_css_classes(css)
 
-    def _on_key_pressed(self, _controller, keyval, _keycode, _state):
+    def _copy_active_selection(self) -> bool:
+        """Copy the current widget selection, if any, to the clipboard."""
+        view = self._source_section.view if self._source_section else None
+        if view is not None and view.has_selection():
+            _ok, start_iter, end_iter = view.get_selection_bounds()
+            text = view.get_buffer().get_text(start_iter, end_iter, False)
+            return copy_to_clipboard(view, text)
+        for _prov, section in self._iter_panes():
+            label = section.view
+            if not isinstance(label, Gtk.Label):
+                continue
+            selected = label.get_selection_bounds()
+            if selected and selected[0]:
+                text = label.get_text()[selected[1] : selected[2]]
+                return copy_to_clipboard(label, text)
+        return False
+
+    def _on_key_pressed(self, _controller, keyval, _keycode, state):
+        ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
+        if ctrl and keyval == Gdk.KEY_c and self._copy_active_selection():
+            return True
         if keyval == Gdk.KEY_Escape:
             if self._pinned:
                 return True  # pinned cards ignore Esc; ✕ still closes
@@ -621,10 +646,17 @@ class TranslateWindow(Gtk.ApplicationWindow):
 
         GLib.idle_add(self._apply_measured_chrome)
 
+        GLib.idle_add(self._focus_source_view)
         if self._pending_png:
             GLib.idle_add(self._start_ocr)
         elif self._translate:
             GLib.idle_add(self._start_translation)
+
+    def _focus_source_view(self):
+        """Put keyboard focus in the source view right after mapping."""
+        if not self._closed and self._source_section is not None:
+            self._source_section.view.grab_focus()
+        return False
 
     def _apply_measured_chrome(self):
         """Replace estimated chrome heights with real widget measures.
@@ -659,10 +691,9 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._translation_max_h = translation_cap
         if self._source_section:
             self._source_section.update_max_h(source_cap)
-        panes = list(self._iter_panes())
-        for section, cap in zip(
-            panes, pane_maxima(translation_cap, len(panes), min_h=36), strict=True
-        ):
+        pane_pairs = list(self._iter_panes())
+        caps_list = pane_maxima(translation_cap, len(pane_pairs), min_h=36)
+        for (_prov, section), cap in zip(pane_pairs, caps_list, strict=True):
             section.update_max_h(cap)
         return False
 
@@ -934,12 +965,22 @@ class TranslateWindow(Gtk.ApplicationWindow):
             self._restart_translation()
 
     def _iter_panes(self):
-        """(provider, section) pairs for every translation pane."""
-        return zip(
-            self._pane_providers,
-            [self._translation_section, *self._extra_panes],
-            strict=True,
-        )
+        """(provider, section) pairs for every translation pane.
+
+        Empty outside translate mode; placeholder slots are filtered so
+        the pairing never sees unset sections.
+        """
+        if not self._translate:
+            return iter(())
+        sections = [
+            section
+            for section in (
+                self._translation_section,
+                *self._extra_panes,
+            )
+            if section is not None
+        ]
+        return zip(self._pane_providers[: len(sections)], sections, strict=False)
 
     def _start_translation(self):
         if self._closed or self._is_placeholder_source():

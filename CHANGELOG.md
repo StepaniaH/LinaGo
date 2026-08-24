@@ -15,8 +15,23 @@ versioning follows [SemVer](https://semver.org/).
   caps listed rows; `--history-export PATH` writes the selection as
   JSON or CSV.
 
+### Fixed
+
+- Popups no longer raise on open: the measured-height pass counted an
+  unset pane outside translate mode and mis-unpacked pane pairs inside
+  translate mode.
+- Copy/paste inside the popup works as expected: keyboard mode is
+  on-demand, the source view takes focus on open, and Ctrl+C copies
+  the active selection through wl-copy so it survives popup close.
+- `run.sh` installs the project's Python dependencies into the venv on
+  first run; starting the daemon no longer fails with
+  ModuleNotFoundError when the system lacks python-tomlkit.
+
 ### Changed
 
+- The popup requests keyboard focus on demand instead of holding an
+  exclusive grab, letting clicks, shortcuts, and input methods behave
+  like a regular window.
 - CI cancels superseded runs on the same ref.
 - The resident daemon converts SIGTERM and SIGINT into a clean
   shutdown so socket and console cleanup still runs.
