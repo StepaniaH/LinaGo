@@ -144,7 +144,11 @@ Keys are matched by provider name. Alternatively set the env var named in `api_k
 # or TRANSLATE_FROM / TRANSLATE_TO
 ```
 
-`auto` on the source side counts CJK vs Latin letters; `auto` on the target side picks the opposite language.
+`auto` detects English, Chinese, Japanese, Korean, and Russian from
+Unicode scripts; languages sharing the Latin script (French, German,
+Spanish) are selectable manually. `auto` on the target side picks the
+peer language (English pairs with Chinese, everything else defaults to
+English).
 
 ## Project layout
 

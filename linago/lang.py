@@ -23,6 +23,36 @@ LANGUAGES: dict[str, dict[str, str]] = {
         "short": "中",
         "prompt": "Chinese (Simplified)",
     },
+    "ja": {
+        "label": "日本語",
+        "short": "日",
+        "prompt": "Japanese",
+    },
+    "ko": {
+        "label": "한국어",
+        "short": "韩",
+        "prompt": "Korean",
+    },
+    "ru": {
+        "label": "Русский",
+        "short": "俄",
+        "prompt": "Russian",
+    },
+    "fr": {
+        "label": "Français",
+        "short": "法",
+        "prompt": "French",
+    },
+    "de": {
+        "label": "Deutsch",
+        "short": "德",
+        "prompt": "German",
+    },
+    "es": {
+        "label": "Español",
+        "short": "西",
+        "prompt": "Spanish",
+    },
 }
 
 SOURCE_CHOICES = ("auto", *LANGUAGES.keys())
@@ -32,6 +62,9 @@ _HAN_RE = re.compile(
     r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff"
     r"\U00020000-\U0002a6df]"
 )
+_KANA_RE = re.compile(r"[\u3041-\u309f\u30a0-\u30ff]")
+_HANGUL_RE = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
+_CYRILLIC_RE = re.compile(r"[\u0400-\u04ff]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
 _BLANK_LINES_RE = re.compile(r"\n[ \t]*\n+")
 
@@ -53,19 +86,34 @@ def normalize_text(text: str) -> str:
 def detect_lang(text: str) -> str:
     """Heuristic language detection from Unicode script mix.
 
-    Returns one of the keys of :data:`LANGUAGES`. Han characters map to
-    ``zh``; anything else defaults to ``en``.
+    Returns one of the keys of :data:`LANGUAGES`. Kana implies
+    Japanese, hangul implies Korean, Cyrillic implies Russian, and Han
+    characters imply Chinese unless Latin letters dominate. Languages
+    sharing the Latin script cannot be separated, so they default to
+    ``en`` and must be selected explicitly.
     """
-    han = len(_HAN_RE.findall(text))
+    if _KANA_RE.search(text):
+        return "ja"
+    if _HANGUL_RE.search(text):
+        return "ko"
+    cyrillic = len(_CYRILLIC_RE.findall(text))
     latin = len(_LATIN_RE.findall(text))
+    if cyrillic and cyrillic >= latin:
+        return "ru"
+    han = len(_HAN_RE.findall(text))
     if han == 0 and latin == 0:
         return "en"
     return "zh" if han > latin else "en"
 
 
+# Translation peers used when a side is "auto". English pairs with
+# Chinese; every other language defaults to English.
+_PEERS = {"en": "zh"}
+
+
 def opposite_lang(code: str) -> str:
     """The default translation peer of a language."""
-    return "zh" if code == "en" else "en"
+    return _PEERS.get(code, "en")
 
 
 @dataclass(frozen=True)
