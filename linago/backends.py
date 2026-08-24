@@ -248,3 +248,37 @@ def _vision_ollama(provider, image_b64: str, timeout: int) -> str:
     resp.raise_for_status()
     text = (resp.json().get("response") or "").strip()
     return text or ""
+
+
+def tts_speech(
+    provider,
+    text: str,
+    *,
+    voice: str = "alloy",
+    timeout: int | None = None,
+):
+    """Synthesize speech for *text* via an OpenAI-compatible endpoint.
+
+    Returns raw audio bytes. Only ``openai``-type providers implement
+    TTS; anything else raises RuntimeError so callers can disable the
+    control up front.
+    """
+    provider.require_ready()
+    if provider.type != "openai":
+        raise RuntimeError(f"provider type '{provider.type}' does not support TTS")
+    url = f"{provider.base_url}/audio/speech"
+    resp = _post_with_retry(
+        url,
+        headers={
+            "Authorization": f"Bearer {provider.api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": provider.model,
+            "voice": voice,
+            "input": text,
+        },
+        timeout=timeout or provider.timeout_s or 120,
+    )
+    resp.raise_for_status()
+    return resp.content

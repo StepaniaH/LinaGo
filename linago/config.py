@@ -227,3 +227,10 @@ def load_actions(settings: dict) -> dict[str, str]:
         if text:
             actions[str(name)] = text
     return actions
+
+
+def load_tts_provider(settings: dict) -> str | None:
+    """Provider name handling speech synthesis ([tts] provider = "…")."""
+    table = settings.get("tts") or {}
+    name = str(table.get("provider") or "").strip()
+    return name or None

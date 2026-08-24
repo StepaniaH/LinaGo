@@ -22,7 +22,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
 from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell  # noqa: E402
 
-from linago.backends import stream_completion  # noqa: E402
+from linago.backends import stream_completion, tts_speech  # noqa: E402
 from linago.config import AppConfig, OcrSettings  # noqa: E402
 from linago.history import Entry, History  # noqa: E402
 from linago.i18n import _  # noqa: E402
@@ -51,6 +51,7 @@ from linago.placement import (  # noqa: E402
     compute_section_caps,
     get_cursor_position,
 )
+from linago.playback import play_file  # noqa: E402
 
 SOURCE_EDIT_DEBOUNCE_MS = 700  # wait for typing to settle before retranslating
 
@@ -221,6 +222,8 @@ class TextSection:
         overlay.set_child(self.scroll)
         overlay.add_overlay(self.copy_btn)
         body.append(overlay)
+        # exposed so callers can add pane-specific controls (TTS, …)
+        self.overlay = overlay
 
         self.sync_height()
 
@@ -294,6 +297,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         provider_name: str | None = None,
         completion_cb: Callable[[dict], None] | None = None,
         history: History | None = None,
+        tts_provider=None,
     ):
         super().__init__(application=app, title=_("Translate"))
         self._source_text = source_text
@@ -308,6 +312,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._provider_name = provider_name or self._config.active
         self._completion_cb = completion_cb
         self._history = history
+        self._tts = tts_provider
+        self._speaking = False
         self._pinned = False
         self._closed = False
         self._cancel = threading.Event()
@@ -375,6 +381,45 @@ class TranslateWindow(Gtk.ApplicationWindow):
             Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.RIGHT, True)
             Gtk4LayerShell.set_margin(self, Gtk4LayerShell.Edge.TOP, 20)
             Gtk4LayerShell.set_margin(self, Gtk4LayerShell.Edge.RIGHT, 20)
+
+    def _add_speak_button(self):
+        btn = Gtk.Button(label="🔊")
+        btn.set_css_classes(["copy-btn", "speak-btn"])
+        btn.set_halign(Gtk.Align.START)
+        btn.set_valign(Gtk.Align.END)
+        btn.set_can_focus(False)
+        btn.set_tooltip_text(_("Speak the translation"))
+        btn.connect("clicked", self._on_speak_clicked)
+        self._translation_section.overlay.add_overlay(btn)
+
+    def _on_speak_clicked(self, btn):
+        if self._speaking or not self._translation_section:
+            return
+        text = self._translation_section.get_text().strip()
+        if not text or text == "—" or text == _("Translating..."):
+            return
+        self._speaking = True
+        btn.set_label("…")
+        provider = self._tts
+
+        def _worker():
+            try:
+                audio = tts_speech(provider, text)
+                out = cache_dir() / f"tts-{os.getpid()}.mp3"
+                cache_dir().mkdir(parents=True, exist_ok=True)
+                out.write_bytes(audio)
+                play_file(out)
+            except Exception:
+                logging.getLogger(__name__).exception("speech failed")
+
+            def _reset():
+                btn.set_label("🔊")
+                self._speaking = False
+                return False
+
+            GLib.idle_add(_reset)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _on_pin_clicked(self, btn):
         self._pinned = not self._pinned
@@ -489,6 +534,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
                 min_h=36,
                 max_h=self._translation_max_h,
             )
+            if self._tts is not None:
+                self._add_speak_button()
             self._refresh_pair_labels()
 
         footer_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -935,6 +982,7 @@ class TranslateApp(Gtk.Application):
         ocr_settings: OcrSettings | None = None,
         resident: bool = False,
         history: History | None = None,
+        tts_provider=None,
     ):
         super().__init__(application_id="io.github.stepaniah.linago")
         self._source_text = source_text
@@ -950,6 +998,7 @@ class TranslateApp(Gtk.Application):
         self._ocr_settings = ocr_settings
         self._resident = resident
         self._history = history
+        self._tts_provider = tts_provider
         self._window: TranslateWindow | None = None
         self.event_publisher = None  # set by run_resident()
 
@@ -995,6 +1044,7 @@ class TranslateApp(Gtk.Application):
             provider_name=self._provider_name,
             completion_cb=(self.event_publisher if self.event_publisher else None),
             history=self._history,
+            tts_provider=self._tts_provider,
         )
         self._window.present()
 
@@ -1054,6 +1104,7 @@ def run_app(
         source_text,
         translate,
         history=_load_history(),
+        tts_provider=_resolve_tts(config),
         pending_png=pending_png,
         ocr_runner=ocr_runner,
         from_lang=from_lang,
@@ -1084,6 +1135,7 @@ def run_resident(
         "",
         translate=False,
         actions=actions,
+        tts_provider=_resolve_tts(config),
         history=_load_history(),
         action_name=action_name,
         config=config,
@@ -1123,4 +1175,20 @@ def _load_history() -> History | None:
         return History.open_default()
     except Exception:
         logging.getLogger(__name__).warning("history unavailable", exc_info=True)
+        return None
+
+
+def _resolve_tts(config: AppConfig):
+    """Provider for [tts] speech synthesis; None disables the control."""
+    from linago.config import load_settings, load_tts_provider
+
+    name = load_tts_provider(load_settings())
+    if not name:
+        return None
+    try:
+        return config.get(name)
+    except KeyError:
+        logging.getLogger(__name__).warning(
+            "tts provider '%s' not defined; disabling speech", name
+        )
         return None
