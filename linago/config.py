@@ -39,14 +39,10 @@ class Provider:
     def display(self) -> str:
         return f"{self.label} · {self.model}"
 
-    def require_ready(self) -> None:
-        if self.type == "openai" and not self.api_key:
-            raise RuntimeError(
-                _(
-                    "provider '{}' needs an API key: add [keys].{} to "
-                    "secrets.toml, or set its api_key_env variable"
-                ).format(self.name, self.name)
-            )
+    @property
+    def needs_key(self) -> bool:
+        """True for cloud-style backends that cannot work without a key."""
+        return self.type == "openai" and not self.api_key
 
 
 @dataclass(frozen=True)

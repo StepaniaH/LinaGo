@@ -122,10 +122,10 @@ class TestKeyResolution:
         cfg = load_config(_settings())
         assert cfg.get("prov_b").api_key == "k-conv"
 
-    def test_openai_without_key_is_not_ready(self):
+    def test_openai_without_key_reports_needs_key(self):
         cfg = load_config(_settings())
-        with pytest.raises(RuntimeError, match="API key"):
-            cfg.get("prov_b").require_ready()
+        assert cfg.get("prov_b").needs_key is True
+        assert cfg.get("prov_a").needs_key is False
 
 
 class TestOverrides:

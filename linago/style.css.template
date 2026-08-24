@@ -88,6 +88,15 @@ textview.editable-text > text:selected {
     color: $edit_focus_fg;
 }
 
+/* read-only panes share the palette but never show a caret */
+textview.readonly-text,
+textview.readonly-text > text {
+    background: none;
+    background-color: transparent;
+    color: $text_fg;
+    caret-color: transparent;
+}
+
 /* ── copy button (bottom-right of each text box) ────────── */
 .copy-btn {
     background-color: $hov;

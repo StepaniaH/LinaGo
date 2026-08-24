@@ -16,6 +16,7 @@ import linago
 from linago.backends import probe_ollama, probe_openai
 from linago.config import load_config, load_ocr_settings, load_settings
 from linago.daemon import daemon_alive, default_socket_path
+from linago.i18n import _
 
 _BINARIES = [
     ("slurp", True),
@@ -99,11 +100,11 @@ def run_checks(
         ocr_cfg = load_ocr_settings(settings)
         checks.append(Check("config", True, f"{len(cfg.providers)} provider(s)"))
         active = cfg.get()
-        ready_error = None
-        try:
-            active.require_ready()
-        except RuntimeError as exc:
-            ready_error = str(exc)
+        ready_error = (
+            _("provider '{}' has no API key configured").format(active.name)
+            if active.needs_key
+            else None
+        )
         if ready_error:
             checks.append(
                 Check("active-provider-key", False, ready_error, warning_only=True)

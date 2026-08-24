@@ -54,10 +54,26 @@ class TestTTSSpeech:
         with pytest.raises(RuntimeError, match="TTS"):
             backends.tts_speech(provider, "hello")
 
-    def test_missing_key_raises(self):
+    def test_missing_key_sends_no_auth_header(self, monkeypatch):
+        captured: dict = {}
+
+        class AudioStub:
+            content = b"A"
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {}
+
+        def fake_post(url, **kw):
+            captured["headers"] = kw["headers"]
+            return AudioStub()
+
+        monkeypatch.setattr(backends.requests, "post", fake_post)
         provider = Provider(name="x", type="openai", label="X", base_url="u", model="m")
-        with pytest.raises(RuntimeError, match="API key"):
-            backends.tts_speech(provider, "hi")
+        assert backends.tts_speech(provider, "hi") == b"A"
+        assert "Authorization" not in captured["headers"]
 
 
 class TestPlayerSelection:

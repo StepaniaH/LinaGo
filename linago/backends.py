@@ -34,7 +34,6 @@ def stream_completion(
     timeout: int | None = None,
 ) -> None:
     """Blocking stream; call from a worker thread. Invokes on_token(full)."""
-    provider.require_ready()
     effective_timeout = provider.timeout_s or timeout or 120
     if provider.type == "ollama":
         _stream_ollama(provider, prompt, on_token, cancel, effective_timeout)
@@ -42,6 +41,13 @@ def stream_completion(
         _stream_openai(provider, prompt, on_token, cancel, effective_timeout)
     else:
         raise RuntimeError(f"unsupported provider type: {provider.type}")
+
+
+def _auth_headers(provider) -> dict:
+    headers = {"Content-Type": "application/json"}
+    if provider.api_key:
+        headers["Authorization"] = f"Bearer {provider.api_key}"
+    return headers
 
 
 def _emit_coalesced(on_token, full: str, state: dict, force: bool = False):
@@ -120,10 +126,7 @@ def _stream_ollama(provider, prompt, on_token, cancel, timeout):
 
 def _stream_openai(provider, prompt, on_token, cancel, timeout):
     url = f"{provider.base_url}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {provider.api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = _auth_headers(provider)
     payload = {
         "model": provider.model,
         "messages": [{"role": "user", "content": prompt}],
@@ -183,14 +186,10 @@ def _vision_request(
     timeout: int,
 ):
     """Build and send the multimodal request for either backend type."""
-    provider.require_ready()
     encoded = base64.b64encode(Path(image_path).read_bytes()).decode()
     if provider.type == "openai":
         url = f"{provider.base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {provider.api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = _auth_headers(provider)
         body = {
             "model": provider.model,
             "messages": [
@@ -323,16 +322,12 @@ def tts_speech(
     TTS; anything else raises RuntimeError so callers can disable the
     control up front.
     """
-    provider.require_ready()
     if provider.type != "openai":
         raise RuntimeError(f"provider type '{provider.type}' does not support TTS")
     url = f"{provider.base_url}/audio/speech"
     resp = _post_with_retry(
         url,
-        headers={
-            "Authorization": f"Bearer {provider.api_key}",
-            "Content-Type": "application/json",
-        },
+        headers=_auth_headers(provider),
         json={
             "model": provider.model,
             "voice": voice,
@@ -360,7 +355,7 @@ def probe_openai(provider, *, timeout: int = 3) -> tuple[bool, str]:
     try:
         resp = requests.get(
             f"{provider.base_url}/models",
-            headers={"Authorization": f"Bearer {provider.api_key}"},
+            headers=_auth_headers(provider),
             timeout=timeout,
         )
         if resp.status_code == 401:

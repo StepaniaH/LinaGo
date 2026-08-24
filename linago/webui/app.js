@@ -93,6 +93,10 @@ function applyI18n() {
     lang() === "zh" ? "EN" : "中文";
 }
 
+function providerUrl(name) {
+  return "/api/providers/" + encodeURIComponent(name);
+}
+
 async function api(method, path, body) {
   const options = { method, headers: { "X-LinaGo-Token": token } };
   if (body !== undefined) {
@@ -169,12 +173,19 @@ function renderProviderTable() {
       <td>${name}</td><td>${p.type}</td><td>${p.model}</td>
       <td><span class="badge ${p.has_key ? "on" : "off"}">${p.has_key ? "key" : "—"}</span></td>
       <td class="row end">
+        <button data-test="${name}">${t("test")}</button>
         <button data-edit="${name}">${t("edit")}</button>
         <button class="danger" data-del="${name}">${t("delete")}</button>
       </td>`;
+    row.querySelector("[data-test]").onclick = async () => {
+      const reply = await api("POST", "/api/test-provider", { name });
+      const btn = row.querySelector("[data-test]");
+      btn.textContent = (reply.ok ? "✓ " : "✕ ") + reply.detail;
+      setTimeout(() => (btn.textContent = t("test")), 2500);
+    };
     row.querySelector("[data-edit]").onclick = () => openProviderForm(name);
     row.querySelector("[data-del]").onclick = async () => {
-      await api("DELETE", `/api/providers/${name}`);
+      await api("DELETE", providerUrl(name));
       toast(t("saved"));
       await loadProviders();
     };
@@ -228,7 +239,7 @@ document.getElementById("prov-form").addEventListener("submit", async (event) =>
   const apiKey = form.api_key.value.trim();
   if (apiKey) payload.api_key = apiKey;
   try {
-    await api("PUT", `/api/providers/${name}`, payload);
+    await api("PUT", providerUrl(name), payload);
   } catch (err) {
     showError(err);
     return;

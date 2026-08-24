@@ -172,10 +172,21 @@ class TestDispatch:
         with pytest.raises(RuntimeError, match="unsupported"):
             stream_completion(p, "p", lambda t: None, threading.Event())
 
-    def test_openai_requires_key(self):
+    def test_missing_key_still_attempts_request(self, monkeypatch):
+        """Self-hosted gateways often need no key; the request goes out
+        without an Authorization header and the provider answers."""
+        captured = {}
+
+        def fake_post(url, **kw):
+            captured["headers"] = kw.get("headers")
+            return StubResponse(_sse({"delta": {"content": "x"}}))
+
+        monkeypatch.setattr(backends.requests, "post", fake_post)
         p = Provider(name="x", type="openai", label="X", base_url="u", model="m")
-        with pytest.raises(RuntimeError, match="API key"):
-            stream_completion(p, "p", lambda t: None, threading.Event())
+        tokens: list[str] = []
+        stream_completion(p, "p", tokens.append, threading.Event())
+        assert "Authorization" not in (captured["headers"] or {})
+        assert tokens[-1] == "x"
 
 
 class TestVisionOCR:
@@ -252,10 +263,25 @@ class TestVisionOCR:
         monkeypatch.setattr(backends.requests, "post", broken)
         assert backends.vision_ocr(TestVisionOCR._provider(), png) is None
 
-    def test_missing_key_raises(self, tmp_path):
-        provider = Provider(name="v", type="openai", label="V", base_url="u", model="m")
-        with pytest.raises(RuntimeError, match="API key"):
-            backends.vision_ocr(provider, tmp_path / "x.png")
+    def test_missing_key_sends_no_auth_header(self, monkeypatch, tmp_path):
+        png = tmp_path / "shot.png"
+        png.write_bytes(b"IMG")
+        captured: dict = {}
+
+        def fake_post(url, **kw):
+            captured["headers"] = kw["headers"]
+            return StubResponse(_sse({"delta": {"content": "text"}}))
+
+        monkeypatch.setattr(backends.requests, "post", fake_post)
+        provider = Provider(
+            name="v",
+            type="openai",
+            label="V",
+            base_url="u",
+            model="m",
+        )
+        assert backends.vision_ocr(provider, png) == "text"
+        assert "Authorization" not in captured["headers"]
 
 
 class TestRetry:

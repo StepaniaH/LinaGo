@@ -88,6 +88,15 @@ textview.editable-text > text:selected {
     color: #d8d8d8;
 }
 
+/* read-only panes share the palette but never show a caret */
+textview.readonly-text,
+textview.readonly-text > text {
+    background: none;
+    background-color: transparent;
+    color: #e0e0e0;
+    caret-color: transparent;
+}
+
 /* ── copy button (bottom-right of each text box) ────────── */
 .copy-btn {
     background-color: rgba(255, 255, 255, 0.10);

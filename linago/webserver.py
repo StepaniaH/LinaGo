@@ -206,7 +206,8 @@ def get_config(ctx: ConsoleContext, body=None) -> dict:
 
 
 def put_provider(ctx: ConsoleContext, name: str, body: dict) -> dict:
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", name):
+    name = name.strip()
+    if not name or len(name) > 64 or "/" in name or name.startswith("."):
         raise ApiError(400, "invalid provider name")
     entry = _clean_provider_entry(body)
     doc = configstore.load_document(ctx.settings_file())

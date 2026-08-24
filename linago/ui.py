@@ -119,14 +119,12 @@ def sync_scroll_height(
     """Size a scroller to its child's natural text height."""
 
     def _sync():
-        if isinstance(widget, Gtk.Label):
-            _width, text_height = widget.get_layout().get_pixel_size()
-        else:
-            # TextView: ask for the natural height at the current width.
-            width = widget.get_width() or scroll.get_width() or 0
-            _min, text_height, _mb, _nb = widget.measure(
-                Gtk.Orientation.VERTICAL, width or -1
-            )
+        if widget.get_display() is None or scroll.get_display() is None:
+            return False  # widgets already torn down
+        width = widget.get_width() or scroll.get_width() or 0
+        _min, text_height, _mb, _nb = widget.measure(
+            Gtk.Orientation.VERTICAL, width or -1
+        )
         content_height = max(minimum, min(text_height + 8, maximum))
         scroll.set_min_content_height(-1)
         scroll.set_max_content_height(-1)
@@ -168,8 +166,9 @@ def copy_to_clipboard(widget: Gtk.Widget, text: str) -> bool:
 class TextSection:
     """A labeled text area with a copy button in its bottom-right corner.
 
-    Renders as a Gtk.Label normally, or an editable Gtk.TextView when
-    editable=True (used for the source text so edits can retranslate).
+    Both modes render a Gtk.TextView — editable for the source pane,
+    read-only elsewhere — because text views give native mouse
+    selection, Ctrl+C, and the built-in context menu on every pane.
     """
 
     def __init__(
@@ -193,23 +192,21 @@ class TextSection:
         self.section_label.set_xalign(0)
         body.append(self.section_label)
 
+        self.view = Gtk.TextView()
+        self.view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.view.set_accepts_tab(False)
+        self.view.set_top_margin(2)
+        self.view.set_bottom_margin(2)
+        self.view.set_editable(editable)
+        self.view.set_cursor_visible(editable)
+        classes = [css_class]
         if editable:
-            self.view = Gtk.TextView()
-            self.view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-            self.view.set_accepts_tab(False)
-            self.view.set_top_margin(2)
-            self.view.set_bottom_margin(2)
-            self.view.set_css_classes([css_class, "editable-text"])
-            self.buffer = self.view.get_buffer()
-            self.buffer.set_text(text)
+            classes.append("editable-text")
         else:
-            self.view = Gtk.Label(label=text)
-            self.view.set_wrap(True)
-            self.view.set_selectable(True)
-            self.view.set_xalign(0)
-            self.view.set_valign(Gtk.Align.START)
-            self.view.set_css_classes([css_class])
-            self.buffer = None
+            classes.append("readonly-text")
+        self.view.set_css_classes(classes)
+        self.buffer = self.view.get_buffer()
+        self.buffer.set_text(text)
 
         self.scroll = Gtk.ScrolledWindow()
         self.scroll.set_child(self.view)
@@ -233,16 +230,11 @@ class TextSection:
         self.sync_height()
 
     def get_text(self) -> str:
-        if self.buffer is not None:
-            start, end = self.buffer.get_bounds()
-            return self.buffer.get_text(start, end, False)
-        return self.view.get_text()
+        start, end = self.buffer.get_bounds()
+        return self.buffer.get_text(start, end, False)
 
     def set_text(self, text: str):
-        if self.buffer is not None:
-            self.buffer.set_text(text)
-        else:
-            self.view.set_label(text)
+        self.buffer.set_text(text)
         self.sync_height()
 
     def set_section_label(self, text: str):
@@ -454,20 +446,18 @@ class TranslateWindow(Gtk.ApplicationWindow):
         btn.set_css_classes(css)
 
     def _copy_active_selection(self) -> bool:
-        """Copy the current widget selection, if any, to the clipboard."""
-        view = self._source_section.view if self._source_section else None
-        if view is not None and view.has_selection():
+        """Copy whichever pane holds a text selection to the clipboard."""
+        candidates = []
+        if self._source_section is not None:
+            candidates.append(self._source_section.view)
+        for _prov, section in self._iter_panes():
+            candidates.append(section.view)
+        for view in candidates:
+            if view is None or not view.has_selection():
+                continue
             _ok, start_iter, end_iter = view.get_selection_bounds()
             text = view.get_buffer().get_text(start_iter, end_iter, False)
             return copy_to_clipboard(view, text)
-        for _prov, section in self._iter_panes():
-            label = section.view
-            if not isinstance(label, Gtk.Label):
-                continue
-            selected = label.get_selection_bounds()
-            if selected and selected[0]:
-                text = label.get_text()[selected[1] : selected[2]]
-                return copy_to_clipboard(label, text)
         return False
 
     def _on_key_pressed(self, _controller, keyval, _keycode, state):

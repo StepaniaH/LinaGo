@@ -313,6 +313,17 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser(config.names()).parse_args(argv)
     setup_logging(verbose=args.verbose)
 
+    # Fatal-signal diagnostics: a segfault in the GTK stack leaves a
+    # Python-side traceback in the cache directory for bug reports.
+    import faulthandler
+
+    try:
+        _dump = cache_dir() / "segfault.log"
+        cache_dir().mkdir(parents=True, exist_ok=True)
+        faulthandler.enable(file=open(_dump, "a"))
+    except OSError:
+        pass
+
     socket_path = args.socket or default_socket_path()
 
     if args.doctor:
