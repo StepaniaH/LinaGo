@@ -200,9 +200,7 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
         "--web-only",
         dest="web_only",
         action="store_true",
-        help=_(
-            "Run only the configuration console, without the popup stack"
-        ),
+        help=_("Run only the configuration console, without the popup stack"),
     )
     parser.add_argument(
         "--doctor",
@@ -402,7 +400,7 @@ def main(argv: list[str] | None = None) -> int:
             actions=actions,
             action_name=action_name,
             provider_name=args.provider or config.active,
-                socket_path=socket_path,
+            socket_path=socket_path,
             compare_names=compare_names,
             web_port=args.web_port,
             start_web=not args.no_web,

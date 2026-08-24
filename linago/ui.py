@@ -1234,9 +1234,7 @@ def run_resident(
         threading.Thread(
             target=web_server.serve_forever, name="linago-web", daemon=True
         ).start()
-        logging.getLogger(__name__).info(
-            "web console on http://127.0.0.1:%s", web_port
-        )
+        logging.getLogger(__name__).info("web console on http://127.0.0.1:%s", web_port)
 
     try:
         server.start()
