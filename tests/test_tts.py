@@ -5,9 +5,18 @@ from __future__ import annotations
 import pytest
 
 import linago.backends as backends
-from linago.backends import StubResponse
 from linago.config import Provider
 from linago.playback import pick_player
+
+
+class _AudioStub:
+    content = b"AUDIOBYTES"
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {}
 
 
 class TestTTSSpeech:
@@ -25,13 +34,10 @@ class TestTTSSpeech:
     def test_openai_payload_and_audio_bytes(self, monkeypatch):
         captured: dict = {}
 
-        class AudioResponse(StubResponse):
-            content = b"AUDIOBYTES"
-
         def fake_post(url, **kw):
             captured["url"] = url
             captured["payload"] = kw["json"]
-            return AudioResponse(json_data={})
+            return _AudioStub()
 
         monkeypatch.setattr(backends.requests, "post", fake_post)
         audio = backends.tts_speech(self._provider(), "hello")
