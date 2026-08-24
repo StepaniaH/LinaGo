@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 jobs:
@@ -24,7 +24,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install mypy types-requests -e .
+      # pytest ships in the dev extras but not here; mypy scans tests/
+      - run: pip install mypy types-requests pytest -e .
       - run: mypy
 
   test:
