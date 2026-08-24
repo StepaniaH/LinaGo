@@ -37,6 +37,7 @@ from linago.lang import (  # noqa: E402
     opposite_lang,
     resolve_pair,
 )
+from linago.memory import LanguageMemory  # noqa: E402
 from linago.ocr import (  # noqa: E402
     capture_region,
     forward_to_translation,
@@ -49,6 +50,7 @@ from linago.placement import (  # noqa: E402
     active_monitor,
     compute_placement,
     compute_section_caps,
+    get_active_window_class,
     get_cursor_position,
 )
 from linago.playback import play_file  # noqa: E402
@@ -298,6 +300,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         completion_cb: Callable[[dict], None] | None = None,
         history: History | None = None,
         tts_provider=None,
+        lang_memory: LanguageMemory | None = None,
     ):
         super().__init__(application=app, title=_("Translate"))
         self._source_text = source_text
@@ -314,6 +317,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._history = history
         self._tts = tts_provider
         self._speaking = False
+        self._lang_memory = lang_memory
+        self._last_class: str | None = None
         self._pinned = False
         self._closed = False
         self._cancel = threading.Event()
@@ -886,7 +891,21 @@ class TranslateWindow(Gtk.ApplicationWindow):
             return False
         self._gen += 1
         gen = self._gen
-        pair = self._current_pair()
+        memory_hint = None
+        if (
+            self._lang_memory is not None
+            and self._lang_memory.enabled
+            and self._from_lang == "auto"
+            and self._to_lang == "auto"
+        ):
+            self._last_class = get_active_window_class()
+            memory_hint = self._lang_memory.vote(self._last_class or "")
+        pair = resolve_pair(
+            self._source_text,
+            self._from_lang,
+            self._to_lang,
+            detected=memory_hint,
+        )
         provider = self._provider()
         template = self._current_template()
         action = self._action_name
@@ -930,6 +949,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
                     )
                 except Exception:
                     logging.getLogger(__name__).exception("history write failed")
+            if self._lang_memory is not None and self._last_class:
+                self._lang_memory.record(self._last_class, pair.source)
 
         translate_stream(
             provider,
@@ -983,6 +1004,7 @@ class TranslateApp(Gtk.Application):
         resident: bool = False,
         history: History | None = None,
         tts_provider=None,
+        lang_memory: LanguageMemory | None = None,
     ):
         super().__init__(application_id="io.github.stepaniah.linago")
         self._source_text = source_text
@@ -999,6 +1021,7 @@ class TranslateApp(Gtk.Application):
         self._resident = resident
         self._history = history
         self._tts_provider = tts_provider
+        self._lang_memory = lang_memory
         self._window: TranslateWindow | None = None
         self.event_publisher = None  # set by run_resident()
 
@@ -1045,6 +1068,7 @@ class TranslateApp(Gtk.Application):
             completion_cb=(self.event_publisher if self.event_publisher else None),
             history=self._history,
             tts_provider=self._tts_provider,
+            lang_memory=self._lang_memory,
         )
         self._window.present()
 
@@ -1105,6 +1129,7 @@ def run_app(
         translate,
         history=_load_history(),
         tts_provider=_resolve_tts(config),
+        lang_memory=_load_memory(),
         pending_png=pending_png,
         ocr_runner=ocr_runner,
         from_lang=from_lang,
@@ -1192,3 +1217,12 @@ def _resolve_tts(config: AppConfig):
             "tts provider '%s' not defined; disabling speech", name
         )
         return None
+
+
+def _load_memory() -> LanguageMemory | None:
+    """Per-app language memory; disabled unless [memory] enabled=true."""
+    from linago.config import load_settings
+
+    settings = load_settings()
+    enabled = bool((settings.get("memory") or {}).get("enabled", False))
+    return LanguageMemory.open_default(enabled=enabled)

@@ -127,10 +127,20 @@ class LangPair:
     target_choice: str  # user selection (may be auto)
 
 
-def resolve_pair(text: str, source_choice: str, target_choice: str) -> LangPair:
-    """Resolve auto selections into a concrete source→target pair."""
-    detected = detect_lang(text)
-    source = detected if source_choice == "auto" else source_choice
+def resolve_pair(
+    text: str,
+    source_choice: str,
+    target_choice: str,
+    *,
+    detected: str | None = None,
+) -> LangPair:
+    """Resolve auto selections into a concrete source→target pair.
+
+    ``detected`` overrides the script heuristic (used by per-app
+    language memory when both sides are auto).
+    """
+    det = detected if detected in LANGUAGES else detect_lang(text)
+    source = det if source_choice == "auto" else source_choice
     if target_choice == "auto":
         target = opposite_lang(source)
     else:
@@ -140,7 +150,7 @@ def resolve_pair(text: str, source_choice: str, target_choice: str) -> LangPair:
     return LangPair(
         source=source,
         target=target,
-        detected=detected,
+        detected=det,
         source_choice=source_choice,
         target_choice=target_choice,
     )

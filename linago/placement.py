@@ -107,6 +107,17 @@ def get_cursor_position() -> tuple[int, int] | None:
         return None
 
 
+def get_active_window_class() -> str | None:
+    """Window class of the focused client via hyprctl; None on failure."""
+    raw = _run_hyprctl(["activewindow", "-j"])
+    if not raw:
+        return None
+    try:
+        return str(json.loads(raw).get("class")) or None
+    except json.JSONDecodeError:
+        return None
+
+
 def default_chrome_h(translate: bool) -> int:
     """Estimated vertical chrome before real measurement is possible."""
     chrome = HEADER_H + FOOTER_H + BODY_PAD_V + SECTION_LABEL_H
