@@ -26,7 +26,7 @@ versioning follows [SemVer](https://semver.org/).
 - Hyprland bind snippets in the console with copy support and an
   explicit session-only apply via `hyprctl keyword`.
 
-## [0.3.0] - 2026-08-24
+## [0.4.0] - 2026-08-24
 
 ### Added
 

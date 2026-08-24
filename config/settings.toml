@@ -43,9 +43,9 @@ api_key_env = "DEEPSEEK_API_KEY"
 
 # ── OCR engine ───────────────────────────────────────────────────────────────
 # engine: "tesseract" (offline, fast) or "vision" (multimodal model).
-# Vision mode sends the screenshot to the provider named below and
-# handles small text, dark themes, and stylized fonts far better.
-# Override per run with --ocr-engine / TRANSLATE_OCR_ENGINE.
+# Vision mode sends the screenshot to the provider named below, which
+# copes with small text, dark themes, and stylized fonts that trip
+# tesseract up. Override per run with --ocr-engine / TRANSLATE_OCR_ENGINE.
 #
 # [ocr]
 # engine = "tesseract"
@@ -62,6 +62,25 @@ api_key_env = "DEEPSEEK_API_KEY"
 # polish = "Polish the following text:\n\n{text}"
 #
 # Set a default for the dropdown with `action = "explain"` under [app].
+
+# ── compare panes ────────────────────────────────────────────────────────────
+# List up to four provider names; the popup then renders one streaming
+# pane per entry instead of a single translation. Empty keeps the
+# default single pane.
+#
+# [compare]
+# providers = ["openai", "deepseek"]
+
+# ── appearance ───────────────────────────────────────────────────────────────
+# Presets render config/style.css from linago/style.css.template;
+# prefer editing these values (or the web console) over hand-editing
+# the stylesheet.
+#
+# [appearance]
+# preset = "dark"             # dark | midnight | paper
+# accent = ""                 # section-label color override
+# bg_alpha = 0.94             # 0.3 – 1.0
+# font_scale = 1.0            # 0.7 – 1.6
 
 # ── history / speech / memory ────────────────────────────────────────────────
 # [history]

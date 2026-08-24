@@ -38,7 +38,7 @@ LinaGo captures a screen region (or the primary selection), recognizes text with
 
 | Component | Notes |
 |-----------|--------|
-| Hyprland / Wayland | Uses `hyprctl` for cursor & monitor geometry (falls back gracefully) |
+| Hyprland / Wayland | Uses `hyprctl` for cursor & monitor geometry; without it the popup opens in a fixed corner |
 | GTK 4 + Gtk4LayerShell | Popup overlay |
 | Python 3.11+ | Tested on 3.14 |
 | `grim`, `slurp` | Region capture |
@@ -50,7 +50,7 @@ On Arch Linux:
 
 ```bash
 sudo pacman -S grim slurp tesseract tesseract-data-chi_sim tesseract-data-eng \
-  gtk4 gtk4-layer-shell python-gobject python-requests wl-clipboard
+  gtk4 gtk4-layer-shell python-gobject python-requests python-tomlkit wl-clipboard
 ```
 
 ## Quick start
@@ -81,6 +81,8 @@ pip install .          # console script: linago
 ./run.sh --translate --provider openai --text "…"
 ./run.sh --translate --from auto --to zh --text "…"
 ./run.sh --history 50                   # replay recent translations
+./run.sh --daemon                       # resident mode + web console
+./run.sh --web-only                     # configuration console, no popup
 ./run.sh --doctor                       # environment self-check (--json supported)
 ./run.sh                                # demo / help card
 ```
@@ -96,8 +98,10 @@ pip install .          # console script: linago
 | Edit source text | Debounced retranslate (~700 ms) |
 | `Ctrl+Enter` in source | Retranslate immediately |
 | ⧉ on a pane | Copy that pane’s text |
+| 🔊 on the translation pane | Speak via OpenAI-compatible TTS (`[tts]`) |
+| 📌 in the header | Pin the card; Esc is ignored while pinned |
 
-Failed or empty OCR stays in the source pane with its message and is never sent to the provider.
+With `[compare] providers` set, the footer provider dropdown is hidden — the pane set comes from settings instead. Failed or empty OCR stays in the source pane with its message and is never sent to the provider.
 
 ### Hyprland bind examples
 
@@ -266,23 +270,37 @@ msgfmt -o linago/locale/zh_CN/LC_MESSAGES/linago.mo \
 
 ```
 LinaGo/
-├── assets/LinaGo.png            # project icon
+├── assets/LinaGo.png           # project icon
 ├── config/
-│   ├── settings.toml            # providers, OCR engine & defaults
-│   ├── secrets.toml.example     # API key template
-│   └── style.css                # popup styling
+│   ├── settings.toml           # providers, engines, appearance defaults
+│   ├── secrets.toml.example    # API key template
+│   └── style.css               # generated popup stylesheet
+├── docs/ROADMAP.md             # planned work
 ├── linago/
-│   ├── lang.py                  # language table, detection, prompts
-│   ├── placement.py             # hyprctl geometry + popup placement math
-│   ├── ocr.py                   # slurp/grim capture + tesseract
-│   ├── config.py                # provider/settings loading
-│   ├── backends.py              # streaming translation backends
-│   ├── ui.py                    # GTK4 layer-shell popup
-│   └── cli.py                   # argument parsing & launch
-├── docs/
-│   └── ROADMAP.md               # planned work
-├── run.sh                       # launcher
-└── README.md
+│   ├── cli.py                  # argument parsing and launch
+│   ├── ui.py                   # GTK4 layer-shell popup
+│   ├── compare.py              # multi-provider pane helpers
+│   ├── backends.py             # streaming, TTS, vision OCR clients
+│   ├── ocr.py                  # capture, primary selection, tesseract
+│   ├── placement.py            # hyprctl geometry and placement math
+│   ├── lang.py                 # language table, detection, prompts
+│   ├── i18n.py                 # gettext catalogs (locale/)
+│   ├── config.py               # settings and provider loading
+│   ├── configstore.py          # comment-preserving TOML writes
+│   ├── theme.py                # preset rendering for style.css
+│   ├── history.py              # SQLite translation history
+│   ├── memory.py               # per-application language votes
+│   ├── daemon.py               # Unix socket protocol and event bus
+│   ├── webserver.py            # web console API
+│   ├── playback.py             # audio player dispatch
+│   ├── doctor.py               # self-check report
+│   ├── style.css.template      # theme template
+│   ├── locale/zh_CN/           # catalog sources and compiled .mo
+│   └── webui/                  # console static assets
+├── packaging/aur/              # AUR package template
+├── tests/
+├── run.sh                      # launcher
+└── pyproject.toml
 ```
 
 ## License
