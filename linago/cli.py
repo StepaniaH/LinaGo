@@ -246,6 +246,9 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(settings)
     ocr_cfg = load_ocr_settings(settings)
     actions = load_actions(settings)
+    compare_names = [
+        str(n) for n in ((settings.get("compare") or {}).get("providers") or [])
+    ]
     warn_secret_permissions()
 
     # Language catalog must be installed before argparse help is built.
@@ -330,6 +333,7 @@ def main(argv: list[str] | None = None) -> int:
             action_name=action_name,
             provider_name=args.provider or config.active,
             socket_path=socket_path,
+            compare_names=compare_names,
         )
 
     capture_requested = args.ocr or args.ocr_multi
@@ -395,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         action_name=action_name,
         config=config,
         provider_name=args.provider or config.active,
+        compare_names=compare_names,
     )
 
 

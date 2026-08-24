@@ -23,6 +23,7 @@ gi.require_version("Gtk4LayerShell", "1.0")
 from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell  # noqa: E402
 
 from linago.backends import stream_completion, tts_speech  # noqa: E402
+from linago.compare import pane_maxima, resolve_providers  # noqa: E402
 from linago.config import AppConfig, OcrSettings  # noqa: E402
 from linago.history import Entry, History  # noqa: E402
 from linago.i18n import _  # noqa: E402
@@ -302,6 +303,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         history: History | None = None,
         tts_provider=None,
         lang_memory: LanguageMemory | None = None,
+        compare_names: list[str] | None = None,
     ):
         super().__init__(application=app, title=_("Translate"))
         self._source_text = source_text
@@ -320,6 +322,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._speaking = False
         self._lang_memory = lang_memory
         self._last_class: str | None = None
+        self._compare = resolve_providers(compare_names or [], self._config)
         self._pinned = False
         self._closed = False
         self._cancel = threading.Event()
@@ -330,6 +333,9 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._edit_timeout_id = 0
         self._source_section: TextSection | None = None
         self._translation_section: TextSection | None = None
+        self._extra_panes: list[TextSection] = []
+        self._pane_providers: list = []
+        self._compare = []
         self._from_dropdown: Gtk.DropDown | None = None
         self._to_dropdown: Gtk.DropDown | None = None
         self._provider_dropdown: Gtk.DropDown | None = None
@@ -532,15 +538,28 @@ class TranslateWindow(Gtk.ApplicationWindow):
             waiting = (
                 _("Waiting for OCR...") if self._pending_png else _("Translating...")
             )
-            self._translation_section = TextSection(
-                body,
-                section=_("Translation"),
-                text=waiting,
-                css_class="translation-text",
-                min_h=36,
-                max_h=self._translation_max_h,
-            )
-            if self._tts is not None:
+            providers = self._compare or [self._provider()]
+            self._pane_providers = providers
+            caps = pane_maxima(self._translation_max_h, len(providers))
+            for index, prov in enumerate(providers):
+                if index:
+                    divider = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+                    divider.set_css_classes(["separator"])
+                    body.append(divider)
+                label = prov.display if self._compare else _("Translation")
+                section = TextSection(
+                    body,
+                    section=label,
+                    text=waiting,
+                    css_class="translation-text",
+                    min_h=36,
+                    max_h=caps[index],
+                )
+                if index == 0:
+                    self._translation_section = section
+                else:
+                    self._extra_panes.append(section)
+            if self._tts is not None and len(providers) == 1:
                 self._add_speak_button()
             self._refresh_pair_labels()
 
@@ -565,7 +584,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
             )
             self._action_dropdown.connect("notify::selected", self._on_action_changed)
             footer_box.append(self._action_dropdown)
-        if self._translate:
+        if self._translate and not self._compare:
             names = self._config.names()
             labels = [self._config.get(n).display for n in names]
             store = Gtk.StringList.new(labels)
@@ -584,6 +603,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
             )
             footer_box.append(self._provider_dropdown)
 
+        if self._translate:
             self._footer_label = Gtk.Label(label="")
             self._footer_label.set_halign(Gtk.Align.END)
             self._footer_label.set_hexpand(True)
@@ -627,8 +647,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         chrome += nat(self._footer_box)
         if self._source_section:
             chrome += nat(self._source_section.section_label)
-        if self._translation_section:
-            chrome += nat(self._translation_section.section_label)
+        for _prov, section in self._iter_panes():
+            chrome += nat(section.section_label)
 
         source_cap, translation_cap = compute_section_caps(
             self._avail_h, self._translate, chrome_h=chrome
@@ -637,8 +657,11 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._translation_max_h = translation_cap
         if self._source_section:
             self._source_section.update_max_h(source_cap)
-        if self._translation_section:
-            self._translation_section.update_max_h(translation_cap)
+        panes = list(self._iter_panes())
+        for section, cap in zip(
+            panes, pane_maxima(translation_cap, len(panes), min_h=36), strict=True
+        ):
+            section.update_max_h(cap)
         return False
 
     def _build_lang_bar(self) -> Gtk.Box:
@@ -861,14 +884,15 @@ class TranslateWindow(Gtk.ApplicationWindow):
             return
         if usable:
             self._start_translation()
-        elif self._translation_section:
-            self._translation_section.set_text("—")
+        else:
+            for _prov, section in self._iter_panes():
+                section.set_text("—")
 
     def _restart_translation(self):
         self._cancel.set()
         self._cancel = threading.Event()
-        if self._translation_section:
-            self._translation_section.set_text(_("Translating..."))
+        for _prov, section in self._iter_panes():
+            section.set_text(_("Translating..."))
         self._start_translation()
 
     def _current_template(self) -> str | None:
@@ -886,6 +910,14 @@ class TranslateWindow(Gtk.ApplicationWindow):
             return
         if self._translate and not self._is_placeholder_source():
             self._restart_translation()
+
+    def _iter_panes(self):
+        """(provider, section) pairs for every translation pane."""
+        return zip(
+            self._pane_providers,
+            [self._translation_section, *self._extra_panes],
+            strict=True,
+        )
 
     def _start_translation(self):
         if self._closed or self._is_placeholder_source():
@@ -907,67 +939,71 @@ class TranslateWindow(Gtk.ApplicationWindow):
             self._to_lang,
             detected=memory_hint,
         )
-        provider = self._provider()
         template = self._current_template()
         action = self._action_name
         self._refresh_pair_labels()
 
-        def _on_token(full_result: str):
-            if gen != self._gen:
-                return
-            self._on_token(full_result)
+        for pane_provider, section in self._iter_panes():
 
-        def _on_done(final_text: str):
-            if gen != self._gen:
-                return
-            if self._completion_cb is not None:
-                try:
-                    self._completion_cb(
-                        {
-                            "event": "translation",
-                            "source": self._source_text,
-                            "translated": final_text,
-                            "source_lang": pair.source,
-                            "target_lang": pair.target,
-                            "provider": provider.name,
-                            "action": action,
-                        }
-                    )
-                except Exception:
-                    logging.getLogger(__name__).exception("completion callback failed")
-            if self._history is not None:
-                try:
-                    self._history.add(
-                        Entry(
-                            ts=time.time(),
-                            source_lang=pair.source,
-                            target_lang=pair.target,
-                            source_text=self._source_text,
-                            translated_text=final_text,
-                            provider=provider.name,
-                            action=action,
-                        )
-                    )
-                except Exception:
-                    logging.getLogger(__name__).exception("history write failed")
-            if self._lang_memory is not None and self._last_class:
-                self._lang_memory.record(self._last_class, pair.source)
+            def _make_handlers(_prov=pane_provider, _sec=section):
+                def _on_token(full_result: str):
+                    if gen != self._gen or self._closed:
+                        return
+                    _sec.set_text(full_result)
 
-        translate_stream(
-            provider,
-            self._source_text,
-            pair,
-            _on_token,
-            self._cancel,
-            template=template,
-            on_done=_on_done,
-        )
+                def _on_done(final_text: str):
+                    if gen != self._gen or self._closed:
+                        return
+                    if self._completion_cb is not None:
+                        try:
+                            self._completion_cb(
+                                {
+                                    "event": "translation",
+                                    "source": self._source_text,
+                                    "translated": final_text,
+                                    "source_lang": pair.source,
+                                    "target_lang": pair.target,
+                                    "provider": _prov.name,
+                                    "action": action,
+                                }
+                            )
+                        except Exception:
+                            logging.getLogger(__name__).exception(
+                                "completion callback failed"
+                            )
+                    if self._history is not None:
+                        try:
+                            self._history.add(
+                                Entry(
+                                    ts=time.time(),
+                                    source_lang=pair.source,
+                                    target_lang=pair.target,
+                                    source_text=self._source_text,
+                                    translated_text=final_text,
+                                    provider=_prov.name,
+                                    action=action,
+                                )
+                            )
+                        except Exception:
+                            logging.getLogger(__name__).exception(
+                                "history write failed"
+                            )
+                    if self._lang_memory is not None and self._last_class:
+                        self._lang_memory.record(self._last_class, pair.source)
+
+                return _on_token, _on_done
+
+            on_token, on_done = _make_handlers()
+            translate_stream(
+                pane_provider,
+                self._source_text,
+                pair,
+                on_token,
+                self._cancel,
+                template=template,
+                on_done=on_done,
+            )
         return False
-
-    def _on_token(self, full_result: str):
-        if self._closed or not self._translation_section:
-            return
-        self._translation_section.set_text(full_result)
 
 
 def load_app_config() -> AppConfig:
@@ -1132,6 +1168,7 @@ def run_app(
     action_name: str | None = None,
     config: AppConfig | None = None,
     provider_name: str | None = None,
+    compare_names: list[str] | None = None,
 ) -> int:
     """Create the popup application and run its main loop."""
     app = TranslateApp(
@@ -1148,6 +1185,7 @@ def run_app(
         action_name=action_name,
         config=config,
         provider_name=provider_name,
+        compare_names=compare_names,
     )
     return app.run(None)
 
@@ -1160,6 +1198,7 @@ def run_resident(
     action_name: str | None = None,
     provider_name: str | None = None,
     socket_path: str,
+    compare_names: list[str] | None = None,
 ) -> int:
     """Serve socket requests until the process is terminated."""
     import sys as _sys
@@ -1177,6 +1216,7 @@ def run_resident(
         provider_name=provider_name,
         ocr_settings=ocr_settings,
         resident=True,
+        compare_names=compare_names,
     )
 
     server = daemon.Server(socket_path, on_request=app.present_payload)
