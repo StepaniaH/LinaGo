@@ -23,6 +23,8 @@ from linago.config import (
     load_settings,
     warn_secret_permissions,
 )
+from linago.i18n import _
+from linago.i18n import install as install_i18n
 from linago.lang import SOURCE_CHOICES, normalize_text
 from linago.paths import cache_dir
 
@@ -60,16 +62,22 @@ def check_dependencies(
             missing.append(binary)
     if missing:
         print(
-            "缺少依赖命令: " + ", ".join(missing) + "\n"
-            "请安装对应包后再运行（Arch 示例: grim slurp tesseract "
-            "tesseract-data-chi_sim tesseract-data-eng）。",
+            _("Missing required commands: {}").format(", ".join(missing))
+            + "\n"
+            + _(
+                "Install them first (Arch example: grim slurp tesseract "
+                "tesseract-data-chi_sim tesseract-data-eng)."
+            ),
             file=sys.stderr,
         )
         sys.exit(1)
 
     if shutil.which("hyprctl") is None:
         print(
-            "警告: 未找到 hyprctl，弹窗将显示在屏幕右上角。",
+            _(
+                "Warning: hyprctl not found; the popup will show "
+                "in the top-right corner."
+            ),
             file=sys.stderr,
         )
 
@@ -77,58 +85,70 @@ def check_dependencies(
 def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="linago",
-        description="OCR + AI 翻译弹窗（Hyprland / Wayland）",
+        description=_("OCR + AI translation popup for Hyprland / Wayland"),
     )
-    parser.add_argument("--ocr", action="store_true", help="截图 OCR 识别文字")
+    parser.add_argument(
+        "--ocr",
+        action="store_true",
+        help=_("Capture a screen region and OCR it"),
+    )
     parser.add_argument(
         "--ocr-engine",
         dest="ocr_engine",
         choices=OCR_ENGINES,
         default=os.environ.get("TRANSLATE_OCR_ENGINE"),
-        help="OCR 引擎（默认读 settings.toml [ocr].engine）",
+        help=_("OCR engine (default from [ocr].engine in settings.toml)"),
     )
     parser.add_argument(
         "--selection",
         action="store_true",
-        help="翻译主选区（primary selection）中的文本，需 wl-clipboard",
+        help=_("Translate the primary selection (needs wl-clipboard)"),
     )
     parser.add_argument(
-        "--translate", action="store_true", help="调用当前 provider 翻译"
+        "--translate",
+        action="store_true",
+        help=_("Translate using the active provider"),
     )
-    parser.add_argument("--text", type=str, default=None, help="直接指定文本")
+    parser.add_argument(
+        "--text",
+        type=str,
+        default=None,
+        help=_("Use this text instead of capturing"),
+    )
     parser.add_argument(
         "--from",
         dest="from_lang",
         choices=SOURCE_CHOICES,
         default=os.environ.get("TRANSLATE_FROM", "auto"),
-        help="源语言（默认 auto：按字符判定）",
+        help=_("Source language (default auto: detect from script)"),
     )
     parser.add_argument(
         "--to",
         dest="to_lang",
         choices=SOURCE_CHOICES,
         default=os.environ.get("TRANSLATE_TO", "auto"),
-        help="目标语言（默认 auto：取源语言的对面）",
+        help=_("Target language (default auto: peer of the source)"),
     )
     parser.add_argument(
         "--provider",
         choices=provider_names,
         default=None,
         help=(
-            "翻译后端（默认读 settings.toml 的 [app].provider；"
-            f"可用: {', '.join(provider_names)}）"
+            _(
+                "Translation backend (default from [app].provider; available: {})"
+            ).format(", ".join(provider_names))
         ),
     )
     parser.add_argument(
         "--action",
         dest="action",
         default=os.environ.get("TRANSLATE_ACTION"),
-        help="执行 settings.toml [actions] 中定义的动作而非直接翻译",
+        help=_("Run an action defined under [actions] instead of translating"),
     )
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="输出详细日志（同时写入缓存目录 linago.log）",
+        help=_("Verbose logging (also written to linago.log in the cache dir)"),
     )
     return parser
 
@@ -187,13 +207,19 @@ def main(argv: list[str] | None = None) -> int:
     actions = load_actions(settings)
     warn_secret_permissions()
 
+    # Language catalog must be installed before argparse help is built.
+    configured_lang = (settings.get("app") or {}).get("lang")
+    install_i18n(str(configured_lang) if configured_lang else None)
+
     args = build_parser(config.names()).parse_args(argv)
     setup_logging(verbose=args.verbose)
 
     if args.action and args.action not in actions:
         available = ", ".join(actions) or "（未定义）"
         print(
-            f"未知动作 '{args.action}'；settings.toml [actions] 可用: {available}",
+            _("Unknown action '{}'; defined under [actions]: {}").format(
+                args.action, available
+            ),
             file=sys.stderr,
         )
         return 2
@@ -209,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     ocr_runner = None
     if args.ocr:
         pending_png = ocr_mod.capture_region(cache_dir())
-        source_text = "识别中..."
+        source_text = _("Recognizing...")
         if engine == "vision":
             vision_provider = (
                 config.get(ocr_cfg.provider) if ocr_cfg.provider else config.get()
@@ -227,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.selection:
         selected = read_primary_selection()
         if not selected or not selected.strip():
-            print("主选区为空或无法读取。", file=sys.stderr)
+            print(_("Primary selection is empty or unavailable."), file=sys.stderr)
             return 1
         source_text = normalize_text(selected)
     elif args.text:
@@ -236,14 +262,19 @@ def main(argv: list[str] | None = None) -> int:
         active = config.get(args.provider)
         source_text = (
             "The quick brown fox jumps over the lazy dog.\n\n"
-            "使用方法：\n"
-            "  ./run.sh --ocr --translate\n"
-            "  ./run.sh --translate --text …\n"
-            "  ./run.sh --translate --provider openai --text …\n\n"
-            f"当前后端：{active.display}（{active.type}）\n"
-            "配置：settings.toml · 密钥：secrets.toml\n"
-            "环境变量：TRANSLATE_PROVIDER / TRANSLATE_MODEL / "
-            "TRANSLATE_FROM / TRANSLATE_TO"
+            + _("Usage:")
+            + "\n"
+            + "  ./run.sh --ocr --translate\n"
+            + "  ./run.sh --translate --text …\n"
+            + "  ./run.sh --translate --provider openai --text …\n\n"
+            + _("Active backend: {} ({})").format(active.display, active.type)
+            + "\n"
+            + _("Config: settings.toml · Keys: secrets.toml")
+            + "\n"
+            + _(
+                "Env overrides: TRANSLATE_PROVIDER / TRANSLATE_MODEL / "
+                "TRANSLATE_FROM / TRANSLATE_TO"
+            )
         )
 
     from linago.ui import run_app  # imported late: needs GTK + layer-shell

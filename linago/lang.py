@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from linago.i18n import _
+
 LANGUAGES: dict[str, dict[str, str]] = {
     "en": {
         "label": "English",
@@ -148,8 +150,8 @@ def choice_label(code: str, *, detected: str | None = None) -> str:
     """Dropdown label for a choice code; ``auto`` may show detection."""
     if code == "auto":
         if detected and detected in LANGUAGES:
-            return f"自动 · {LANGUAGES[detected]['short']}"
-        return "自动"
+            return _("Auto · {}").format(LANGUAGES[detected]["short"])
+        return _("Auto")
     return LANGUAGES[code]["label"]
 
 

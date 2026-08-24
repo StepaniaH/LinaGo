@@ -132,8 +132,8 @@ class TestChoiceLabel:
         assert choice_label("ja") == "日本語"
 
     def test_auto_without_detection(self):
-        assert choice_label("auto") == "自动"
+        assert choice_label("auto") == "Auto"
 
     def test_auto_with_detection(self):
-        assert choice_label("auto", detected="zh") == "自动 · 中"
-        assert choice_label("auto", detected="ja") == "自动 · 日"
+        assert choice_label("auto", detected="zh") == "Auto · 中"
+        assert choice_label("auto", detected="ja") == "Auto · 日"

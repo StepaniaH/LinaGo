@@ -1,0 +1,133 @@
+# Chinese (Simplified) translations for LinaGo.
+msgid ""
+msgstr ""
+"Project-Id-Version: linago 0.4.0\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Action to apply to the source text"
+msgstr "对原文执行的动作"
+
+msgid "Active backend: {} ({})"
+msgstr "当前后端：{}（{}）"
+
+msgid "Auto"
+msgstr "自动"
+
+msgid "Auto · {}"
+msgstr "自动 · {}"
+
+msgid "Capture a screen region and OCR it"
+msgstr "截图选区并 OCR 识别文字"
+
+msgid "Config: settings.toml · Keys: secrets.toml"
+msgstr "配置：settings.toml · 密钥：secrets.toml"
+
+msgid "Copy"
+msgstr "复制"
+
+msgid "Env overrides: TRANSLATE_PROVIDER / TRANSLATE_MODEL / TRANSLATE_FROM / TRANSLATE_TO"
+msgstr "环境变量：TRANSLATE_PROVIDER / TRANSLATE_MODEL / TRANSLATE_FROM / TRANSLATE_TO"
+
+msgid "Install them first (Arch example: grim slurp tesseract tesseract-data-chi_sim tesseract-data-eng)."
+msgstr "请先安装对应包（Arch 示例: grim slurp tesseract tesseract-data-chi_sim tesseract-data-eng）。"
+
+msgid "Local"
+msgstr "本地"
+
+msgid "Missing required commands: {}"
+msgstr "缺少依赖命令: {}"
+
+msgid "No text recognized"
+msgstr "（未识别到文字）"
+
+msgid "OCR + AI translation popup for Hyprland / Wayland"
+msgstr "OCR + AI 翻译弹窗（Hyprland / Wayland）"
+
+msgid "OCR engine (default from [ocr].engine in settings.toml)"
+msgstr "OCR 引擎（默认读 settings.toml 的 [ocr].engine）"
+
+msgid "OCR failed"
+msgstr "OCR 失败"
+
+msgid "Primary selection is empty or unavailable."
+msgstr "主选区为空或无法读取。"
+
+msgid "Recognizing..."
+msgstr "识别中..."
+
+msgid "Run an action defined under [actions] instead of translating"
+msgstr "执行 settings.toml [actions] 中定义的动作而非直接翻译"
+
+msgid "Source"
+msgstr "原文"
+
+msgid "Source language (default auto: detect from script)"
+msgstr "源语言（默认 auto：按字符判定）"
+
+msgid "Source · {}"
+msgstr "原文 · {}"
+
+msgid "Source · {} (auto)"
+msgstr "原文 · {}（自动）"
+
+msgid "Swap languages"
+msgstr "交换语言"
+
+msgid "Switch translation backend (local Ollama / BYOK)"
+msgstr "切换翻译后端（本地 Ollama / BYOK）"
+
+msgid "Target language (default auto: peer of the source)"
+msgstr "目标语言（默认 auto：取源语言的对面）"
+
+msgid "Translate"
+msgstr "翻译"
+
+msgid "Translate the primary selection (needs wl-clipboard)"
+msgstr "翻译主选区中的文本（需要 wl-clipboard）"
+
+msgid "Translate using the active provider"
+msgstr "调用当前 provider 翻译"
+
+msgid "Translating..."
+msgstr "翻译中..."
+
+msgid "Translation"
+msgstr "译文"
+
+msgid "Translation backend (default from [app].provider; available: {})"
+msgstr "翻译后端（默认读 settings.toml 的 [app].provider；可用: {}）"
+
+msgid "Translation failed: {}"
+msgstr "翻译失败: {}"
+
+msgid "Translation · {}"
+msgstr "译文 · {}"
+
+msgid "Unknown action '{}'; defined under [actions]: {}"
+msgstr "未知动作 '{}'；[actions] 中已定义: {}"
+
+msgid "Unknown provider '{}'; available: {}"
+msgstr "未知 provider '{}'；可用: {}"
+
+msgid "Usage:"
+msgstr "使用方法："
+
+msgid "Use this text instead of capturing"
+msgstr "直接指定待翻译文本"
+
+msgid "Verbose logging (also written to linago.log in the cache dir)"
+msgstr "输出详细日志（同时写入缓存目录 linago.log）"
+
+msgid "Waiting for OCR..."
+msgstr "等待识别..."
+
+msgid "Warning: hyprctl not found; the popup will show in the top-right corner."
+msgstr "警告: 未找到 hyprctl，弹窗将显示在屏幕右上角。"
+
+msgid "Warning: {} is group/world readable; run chmod 600 {}"
+msgstr "警告: {} 权限过宽，建议执行 chmod 600 {}"
+
+msgid "provider '{}' needs an API key: add [keys].{} to secrets.toml, or set its api_key_env variable"
+msgstr "provider '{}' 需要 API key：写入 secrets.toml 的 [keys].{}，或设置对应的 api_key_env 环境变量"

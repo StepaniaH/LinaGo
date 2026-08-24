@@ -9,6 +9,8 @@
 
 [app]
 provider = "ollama"
+# UI language: a language code like "zh_CN". Unset follows LINAGO_LANG
+# / the system locale, falling back to English.
 
 # ── local ────────────────────────────────────────────────────────────────────
 [providers.ollama]

@@ -201,7 +201,7 @@ class TestSelection:
         monkeypatch.setattr(cli.shutil, "which", lambda n: "/usr/bin/" + n)
         assert cli.main(["--selection"]) == 1
         assert fake_ui == {}
-        assert "主选区" in capsys.readouterr().err
+        assert "Primary selection" in capsys.readouterr().err
 
     def test_selection_reaches_ui_normalized(self, fake_ui, config_dir, monkeypatch):
         monkeypatch.setattr(cli.shutil, "which", lambda n: "/usr/bin/" + n)

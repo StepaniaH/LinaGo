@@ -22,6 +22,7 @@ from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell  # noqa: E402
 
 from linago.backends import stream_completion  # noqa: E402
 from linago.config import AppConfig  # noqa: E402
+from linago.i18n import _  # noqa: E402
 from linago.lang import (  # noqa: E402
     LANGUAGES,
     SOURCE_CHOICES,
@@ -72,7 +73,7 @@ def translate_stream(
         except Exception as exc:
             logging.getLogger(__name__).error("translation failed: %s", exc)
             if not cancel.is_set():
-                GLib.idle_add(_emit, on_token, f"[翻译失败: {exc}]")
+                GLib.idle_add(_emit, on_token, _("Translation failed: {}").format(exc))
 
     threading.Thread(target=_worker, daemon=True).start()
 
@@ -184,7 +185,7 @@ class TextSection:
 
         self.copy_btn = Gtk.Button(label="⧉")
         self.copy_btn.set_css_classes(["copy-btn"])
-        self.copy_btn.set_tooltip_text("复制")
+        self.copy_btn.set_tooltip_text(_("Copy"))
         self.copy_btn.set_halign(Gtk.Align.END)
         self.copy_btn.set_valign(Gtk.Align.END)
         self.copy_btn.set_can_focus(False)
@@ -266,7 +267,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         config: AppConfig | None = None,
         provider_name: str | None = None,
     ):
-        super().__init__(application=app, title="翻译")
+        super().__init__(application=app, title=_("Translate"))
         self._source_text = source_text
         self._translate = translate
         self._pending_png = pending_png
@@ -380,7 +381,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         header.set_css_classes(["header"])
         self._header_box = header
 
-        title = Gtk.Label(label="翻译")
+        title = Gtk.Label(label=_("Translate"))
         title.set_css_classes(["title"])
         title.set_halign(Gtk.Align.START)
         title.set_hexpand(True)
@@ -404,7 +405,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
 
         self._source_section = TextSection(
             body,
-            section="原文",
+            section=_("Source"),
             text=self._source_text,
             css_class="source-text",
             min_h=30,
@@ -424,10 +425,12 @@ class TranslateWindow(Gtk.ApplicationWindow):
             body.append(sep)
             self._separator = sep
 
-            waiting = "等待识别..." if self._pending_png else "翻译中..."
+            waiting = (
+                _("Waiting for OCR...") if self._pending_png else _("Translating...")
+            )
             self._translation_section = TextSection(
                 body,
-                section="译文",
+                section=_("Translation"),
                 text=waiting,
                 css_class="translation-text",
                 min_h=36,
@@ -439,7 +442,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         footer_box.set_css_classes(["footer"])
         self._footer_box = footer_box
         if self._translate and self._actions:
-            entries = ["翻译", *self._actions.keys()]
+            entries = [_("Translate"), *self._actions.keys()]
             store = Gtk.StringList.new(entries)
             self._action_dropdown = Gtk.DropDown.new(store, None)
             selected = 0
@@ -451,7 +454,9 @@ class TranslateWindow(Gtk.ApplicationWindow):
                     self._action_name = None
             self._action_dropdown.set_selected(selected)
             self._action_dropdown.set_css_classes(["action-dropdown"])
-            self._action_dropdown.set_tooltip_text("对原文执行的动作")
+            self._action_dropdown.set_tooltip_text(
+                _("Action to apply to the source text")
+            )
             self._action_dropdown.connect("notify::selected", self._on_action_changed)
             footer_box.append(self._action_dropdown)
         if self._translate:
@@ -466,7 +471,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
                 self._provider_name = names[0]
             self._provider_dropdown.set_css_classes(["provider-dropdown"])
             self._provider_dropdown.set_tooltip_text(
-                "切换翻译后端（本地 Ollama / BYOK）"
+                _("Switch translation backend (local Ollama / BYOK)")
             )
             self._provider_dropdown.connect(
                 "notify::selected", self._on_provider_changed
@@ -539,7 +544,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
 
         swap_btn = Gtk.Button(label="⇄")
         swap_btn.set_css_classes(["swap-btn"])
-        swap_btn.set_tooltip_text("交换语言")
+        swap_btn.set_tooltip_text(_("Swap languages"))
         swap_btn.connect("clicked", self._on_swap_clicked)
 
         self._from_dropdown.connect("notify::selected", self._on_from_changed)
@@ -561,12 +566,18 @@ class TranslateWindow(Gtk.ApplicationWindow):
         if self._source_section:
             src_name = LANGUAGES[pair.source]["label"]
             if pair.source_choice == "auto":
-                self._source_section.set_section_label(f"原文 · {src_name}（自动）")
+                self._source_section.set_section_label(
+                    _("Source · {} (auto)").format(src_name)
+                )
             else:
-                self._source_section.set_section_label(f"原文 · {src_name}")
+                self._source_section.set_section_label(
+                    _("Source · {}").format(src_name)
+                )
         if self._translation_section:
             tgt_name = LANGUAGES[pair.target]["label"]
-            self._translation_section.set_section_label(f"译文 · {tgt_name}")
+            self._translation_section.set_section_label(
+                _("Translation · {}").format(tgt_name)
+            )
         # Refresh "自动 · 英/中" labels on dropdowns without firing handlers
         self._updating_lang_ui = True
         try:
@@ -646,7 +657,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         if not self._footer_label:
             return
         p = self._provider()
-        kind = "本地" if p.type == "ollama" else "BYOK"
+        kind = _("Local") if p.type == "ollama" else "BYOK"
         self._footer_label.set_label(kind)
 
     def _on_provider_changed(self, dropdown, _pspec):
@@ -667,7 +678,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
             self._restart_translation()
 
     def _is_placeholder_source(self) -> bool:
-        return self._source_text in ("识别中...", "等待识别...")
+        return self._source_text in (_("Recognizing..."), _("Waiting for OCR..."))
 
     def _on_source_changed(self, _buffer):
         if self._updating_source_ui or self._closed:
@@ -726,9 +737,9 @@ class TranslateWindow(Gtk.ApplicationWindow):
             return
         usable = forward_to_translation(text)
         if text is None:
-            display = "[OCR 失败]"
+            display = _("OCR failed")
         elif not text:
-            display = "（未识别到文字）"
+            display = _("No text recognized")
         else:
             display = text
         self._source_text = display
@@ -751,7 +762,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._cancel.set()
         self._cancel = threading.Event()
         if self._translation_section:
-            self._translation_section.set_text("翻译中...")
+            self._translation_section.set_text(_("Translating..."))
         self._start_translation()
 
     def _current_template(self) -> str | None:

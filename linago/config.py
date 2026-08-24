@@ -14,6 +14,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from linago.i18n import _
 from linago.paths import find_config_dir
 
 SUPPORTED_TYPES = ("ollama", "openai")
@@ -38,9 +39,10 @@ class Provider:
     def require_ready(self) -> None:
         if self.type == "openai" and not self.api_key:
             raise RuntimeError(
-                f"provider '{self.name}' 需要 API key："
-                f"写入 secrets.toml 的 [keys].{self.name}，"
-                "或设置对应的 api_key_env 环境变量"
+                _(
+                    "provider '{}' needs an API key: add [keys].{} to "
+                    "secrets.toml, or set its api_key_env variable"
+                ).format(self.name, self.name)
             )
 
 
@@ -53,7 +55,7 @@ class AppConfig:
         key = name or self.active
         if key not in self.providers:
             known = ", ".join(sorted(self.providers)) or "(none)"
-            raise KeyError(f"未知 provider '{key}'；可用: {known}")
+            raise KeyError(_("Unknown provider '{}'; available: {}").format(key, known))
         return self.providers[key]
 
     def names(self) -> list[str]:
@@ -103,7 +105,9 @@ def warn_secret_permissions() -> None:
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode & 0o077:
         print(
-            f"警告: {path} 权限过宽，建议执行 chmod 600 {path}",
+            _("Warning: {} is group/world readable; run chmod 600 {}").format(
+                path, path
+            ),
             file=sys.stderr,
         )
 
