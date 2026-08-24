@@ -26,6 +26,15 @@ versioning follows [SemVer](https://semver.org/).
 - `run.sh` installs the project's Python dependencies into the venv on
   first run; starting the daemon no longer fails with
   ModuleNotFoundError when the system lacks python-tomlkit.
+- Self-hosted OpenAI-compatible endpoints (e.g. a Docker Ollama) no
+  longer require an API key: requests omit the Authorization header
+  when none is configured, and cloud providers surface their HTTP 401
+  in the pane instead of refusing to save.
+- The console accepts provider names with dots, spaces, and non-ASCII
+  characters, and each provider row carries its own reachability test
+  button.
+- Translation panes render as read-only text views so mouse selection,
+  Ctrl+C, and the context menu work there too.
 
 ### Changed
 
