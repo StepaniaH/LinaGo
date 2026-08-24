@@ -146,8 +146,50 @@ class TestMain:
 
 
 class TestSelection:
-    """Placeholder for the --selection mode landing next."""
+    def test_flag_accepted(self, config_dir):
+        args = cli.build_parser(["prov_a"]).parse_args(["--selection"])
+        assert args.selection is True
 
-    def test_selection_flag_not_yet_accepted(self, config_dir):
+    def test_read_primary_selection_variants(self, monkeypatch):
+        ok = types.SimpleNamespace(returncode=0, stdout=" picked \n", stderr="")
+        empty = types.SimpleNamespace(returncode=1, stdout="", stderr="empty")
+
+        monkeypatch.setattr(cli.subprocess, "run", lambda cmd, **kw: ok)
+        assert cli.read_primary_selection() == " picked \n"
+
+        monkeypatch.setattr(cli.subprocess, "run", lambda cmd, **kw: empty)
+        assert cli.read_primary_selection() is None
+
+        def missing(cmd, **kw):
+            raise FileNotFoundError("wl-paste")
+
+        monkeypatch.setattr(cli.subprocess, "run", missing)
+        assert cli.read_primary_selection() is None
+
+    def test_wl_paste_is_required(self, monkeypatch, capsys):
+        monkeypatch.setattr(cli.shutil, "which", lambda name: None)
         with pytest.raises(SystemExit):
-            cli.main(["--selection"])
+            cli.check_dependencies(need_selection=True)
+        err = capsys.readouterr().err
+        assert "wl-paste" in err
+
+    def test_empty_selection_reports_and_skips_ui(
+        self, fake_ui, config_dir, monkeypatch, capsys
+    ):
+        monkeypatch.setattr(cli.shutil, "which", lambda n: "/usr/bin/" + n)
+        assert cli.main(["--selection"]) == 1
+        assert fake_ui == {}
+        assert "主选区" in capsys.readouterr().err
+
+    def test_selection_reaches_ui_normalized(self, fake_ui, config_dir, monkeypatch):
+        monkeypatch.setattr(cli.shutil, "which", lambda n: "/usr/bin/" + n)
+        monkeypatch.setattr(
+            cli.subprocess,
+            "run",
+            lambda cmd, **kw: types.SimpleNamespace(
+                returncode=0, stdout="héllo\n\n\nworld\r\n", stderr=""
+            ),
+        )
+        assert cli.main(["--selection", "--translate"]) == 0
+        assert fake_ui["source_text"] == "héllo\nworld"
+        assert fake_ui["translate"] is True

@@ -88,7 +88,11 @@ source .venv/bin/activate   # PyGObject usually comes from system packages
 
 ```conf
 bind = SUPER, T, exec, /path/to/LinaGo/run.sh --ocr --translate
+bind = SUPER, S, exec, /path/to/LinaGo/run.sh --selection --translate
 ```
+
+`--selection` translates the current primary selection (select text,
+then press the key); it requires `wl-clipboard`.
 
 ## Configuration
 

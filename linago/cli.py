@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import subprocess
 import sys
 
 from linago import ocr as ocr_mod
@@ -25,11 +26,17 @@ from linago.paths import cache_dir
 REQUIRED_BINS = {
     "capture": ("slurp", "grim"),
     "tesseract": ("tesseract",),
+    "selection": ("wl-paste",),
     "position": ("hyprctl",),
 }
 
 
-def check_dependencies(*, need_capture: bool, need_tesseract: bool) -> None:
+def check_dependencies(
+    *,
+    need_capture: bool = False,
+    need_tesseract: bool = False,
+    need_selection: bool = False,
+) -> None:
     """Exit with a clear message when hard dependencies are missing.
 
     hyprctl is soft: without it the popup falls back to a fixed corner.
@@ -39,6 +46,8 @@ def check_dependencies(*, need_capture: bool, need_tesseract: bool) -> None:
         wanted += REQUIRED_BINS["capture"]
     if need_tesseract:
         wanted += REQUIRED_BINS["tesseract"]
+    if need_selection:
+        wanted += REQUIRED_BINS["selection"]
 
     seen: set[str] = set()
     missing: list[str] = []
@@ -69,6 +78,11 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
     )
     parser.add_argument("--ocr", action="store_true", help="截图 OCR 识别文字")
     parser.add_argument(
+        "--selection",
+        action="store_true",
+        help="翻译主选区（primary selection）中的文本，需 wl-clipboard",
+    )
+    parser.add_argument(
         "--translate", action="store_true", help="调用当前 provider 翻译"
     )
     parser.add_argument("--text", type=str, default=None, help="直接指定文本")
@@ -98,6 +112,25 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
     return parser
 
 
+def read_primary_selection() -> str | None:
+    """Primary-selection text via wl-paste; None when unavailable/empty.
+
+    wl-clipboard exits non-zero when the selection is empty, which is
+    reported the same way as a missing tool: nothing to translate.
+    """
+    try:
+        proc = subprocess.run(
+            ["wl-paste", "--primary", "--no-newline"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout or None
+
+
 def main(argv: list[str] | None = None) -> int:
     stale = cache_dir() / "screenshot.png"
     stale.unlink(missing_ok=True)
@@ -112,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     check_dependencies(
         need_capture=args.ocr,
         need_tesseract=args.ocr and ocr_cfg.engine == "tesseract",
+        need_selection=args.selection,
     )
 
     pending_png = None
@@ -124,6 +158,12 @@ def main(argv: list[str] | None = None) -> int:
         def ocr_runner(png=pending_png, langs=langs):
             return ocr_mod.run_tesseract(png, langs)
 
+    elif args.selection:
+        selected = read_primary_selection()
+        if not selected or not selected.strip():
+            print("主选区为空或无法读取。", file=sys.stderr)
+            return 1
+        source_text = normalize_text(selected)
     elif args.text:
         source_text = normalize_text(args.text)
     else:
