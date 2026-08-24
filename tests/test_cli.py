@@ -13,6 +13,7 @@ import linago.cli as cli
 SETTINGS_TOML = """
 [app]
 provider = "prov_a"
+action = "explain"
 
 [providers.prov_a]
 type = "ollama"
@@ -26,6 +27,10 @@ label = "Cloud"
 base_url = "https://b.test/v1"
 model = "m2"
 api_key_env = "PROV_B_KEY"
+
+[actions]
+explain = "Explain this {source} text:"
+polish = "Polish the following text:\\n\\n{text}"
 """
 
 
@@ -143,6 +148,23 @@ class TestMain:
         assert "Local · m1" in fake_ui["source_text"]
         assert fake_ui["translate"] is False
         assert fake_ui["provider_name"] == "prov_a"
+
+
+class TestActions:
+    def test_default_action_from_settings(self, fake_ui, config_dir):
+        cli.main(["--text", "hi", "--translate"])
+        assert fake_ui["action_name"] == "explain"
+        assert set(fake_ui["actions"]) == {"explain", "polish"}
+
+    def test_explicit_action_wins(self, fake_ui, config_dir):
+        cli.main(["--text", "hi", "--translate", "--action", "polish"])
+        assert fake_ui["action_name"] == "polish"
+
+    def test_unknown_action_is_rejected(self, fake_ui, config_dir, capsys):
+        assert cli.main(["--text", "hi", "--action", "nope"]) == 2
+        err = capsys.readouterr().err
+        assert "nope" in err and "explain" in err
+        assert fake_ui == {}
 
 
 class TestSelection:

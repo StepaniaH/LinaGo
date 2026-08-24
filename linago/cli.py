@@ -15,6 +15,7 @@ import sys
 
 from linago import ocr as ocr_mod
 from linago.config import (
+    load_actions,
     load_config,
     load_ocr_settings,
     load_settings,
@@ -109,6 +110,12 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
             f"可用: {', '.join(provider_names)}）"
         ),
     )
+    parser.add_argument(
+        "--action",
+        dest="action",
+        default=os.environ.get("TRANSLATE_ACTION"),
+        help="执行 settings.toml [actions] 中定义的动作而非直接翻译",
+    )
     return parser
 
 
@@ -138,9 +145,18 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings()
     config = load_config(settings)
     ocr_cfg = load_ocr_settings(settings)
+    actions = load_actions(settings)
     warn_secret_permissions()
 
     args = build_parser(config.names()).parse_args(argv)
+
+    if args.action and args.action not in actions:
+        available = ", ".join(actions) or "（未定义）"
+        print(
+            f"未知动作 '{args.action}'；settings.toml [actions] 可用: {available}",
+            file=sys.stderr,
+        )
+        return 2
 
     check_dependencies(
         need_capture=args.ocr,
@@ -182,6 +198,9 @@ def main(argv: list[str] | None = None) -> int:
 
     from linago.ui import run_app  # imported late: needs GTK + layer-shell
 
+    default_action = (settings.get("app") or {}).get("action")
+    action_name = args.action or (str(default_action) if default_action else None)
+
     return run_app(
         source_text,
         translate=args.translate,
@@ -189,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
         ocr_runner=ocr_runner,
         from_lang=args.from_lang,
         to_lang=args.to_lang,
+        actions=actions,
+        action_name=action_name,
         config=config,
         provider_name=args.provider or config.active,
     )

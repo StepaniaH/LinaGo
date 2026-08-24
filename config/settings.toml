@@ -35,3 +35,15 @@ label = "DeepSeek"
 base_url = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 api_key_env = "DEEPSEEK_API_KEY"
+
+# ── custom actions ───────────────────────────────────────────────────────────
+# Named prompt templates shown in the popup's action dropdown and usable
+# as `linago --action <name>`. {source}/{target} become language names;
+# {text} receives the text (appended when absent). Uncomment to enable:
+#
+# [actions]
+# explain = "Explain the terminology and context of this {source} text:"
+# polish = "Polish the following text:\n\n{text}"
+#
+# Set a default for the dropdown with `action = "explain"` under [app].
+

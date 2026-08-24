@@ -56,9 +56,10 @@ def translate_stream(
     pair: LangPair,
     on_token,
     cancel: threading.Event,
+    template: str | None = None,
 ):
     """Run translation via the active provider in a daemon thread."""
-    prompt = build_prompt(text, pair)
+    prompt = build_prompt(text, pair, template)
 
     def _worker():
         def _ui_token(full: str):
@@ -250,6 +251,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         ocr_runner: Callable[[], str | None] | None = None,
         from_lang: str = "auto",
         to_lang: str = "auto",
+        actions: dict[str, str] | None = None,
+        action_name: str | None = None,
         config: AppConfig | None = None,
         provider_name: str | None = None,
     ):
@@ -260,6 +263,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._ocr_runner = ocr_runner
         self._from_lang = from_lang
         self._to_lang = to_lang
+        self._actions = dict(actions or {})
+        self._action_name = action_name if action_name in self._actions else None
         self._config = config or load_app_config()
         self._provider_name = provider_name or self._config.active
         self._closed = False
@@ -274,6 +279,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._from_dropdown: Gtk.DropDown | None = None
         self._to_dropdown: Gtk.DropDown | None = None
         self._provider_dropdown: Gtk.DropDown | None = None
+        self._action_dropdown: Gtk.DropDown | None = None
         self._footer_label: Gtk.Label | None = None
         self._source_max_h = 280
         self._translation_max_h = 500
@@ -414,6 +420,22 @@ class TranslateWindow(Gtk.ApplicationWindow):
 
         footer_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         footer_box.set_css_classes(["footer"])
+        if self._translate and self._actions:
+            entries = ["翻译", *self._actions.keys()]
+            store = Gtk.StringList.new(entries)
+            self._action_dropdown = Gtk.DropDown.new(store, None)
+            selected = 0
+            if self._action_name is not None:
+                try:
+                    selected = list(self._actions).index(self._action_name) + 1
+                except ValueError:
+                    selected = 0
+                    self._action_name = None
+            self._action_dropdown.set_selected(selected)
+            self._action_dropdown.set_css_classes(["action-dropdown"])
+            self._action_dropdown.set_tooltip_text("对原文执行的动作")
+            self._action_dropdown.connect("notify::selected", self._on_action_changed)
+            footer_box.append(self._action_dropdown)
         if self._translate:
             names = self._config.names()
             labels = [self._config.get(n).display for n in names]
@@ -672,6 +694,22 @@ class TranslateWindow(Gtk.ApplicationWindow):
             self._translation_section.set_text("翻译中...")
         self._start_translation()
 
+    def _current_template(self) -> str | None:
+        """Prompt template of the selected action; None = plain translate."""
+        return self._actions.get(self._action_name or "")
+
+    def _on_action_changed(self, dropdown, _pspec):
+        names = list(self._actions)
+        idx = dropdown.get_selected()
+        new = None if idx <= 0 else names[idx - 1]
+        if new == self._action_name:
+            return
+        self._action_name = new
+        if self._pending_png:
+            return
+        if self._translate and not self._is_placeholder_source():
+            self._restart_translation()
+
     def _start_translation(self):
         if self._closed or self._is_placeholder_source():
             return False
@@ -686,7 +724,12 @@ class TranslateWindow(Gtk.ApplicationWindow):
             self._on_token(full_result)
 
         translate_stream(
-            self._provider(), self._source_text, pair, _on_token, self._cancel
+            self._provider(),
+            self._source_text,
+            pair,
+            _on_token,
+            self._cancel,
+            template=self._current_template(),
         )
         return False
 
@@ -723,6 +766,8 @@ class TranslateApp(Gtk.Application):
         ocr_runner: Callable[[], str | None] | None = None,
         from_lang: str = "auto",
         to_lang: str = "auto",
+        actions: dict[str, str] | None = None,
+        action_name: str | None = None,
         config: AppConfig | None = None,
         provider_name: str | None = None,
     ):
@@ -733,6 +778,8 @@ class TranslateApp(Gtk.Application):
         self._ocr_runner = ocr_runner
         self._from_lang = from_lang
         self._to_lang = to_lang
+        self._actions = actions or {}
+        self._action_name = action_name
         self._config = config or load_app_config()
         self._provider_name = provider_name or self._config.active
 
@@ -745,6 +792,8 @@ class TranslateApp(Gtk.Application):
             ocr_runner=self._ocr_runner,
             from_lang=self._from_lang,
             to_lang=self._to_lang,
+            actions=self._actions,
+            action_name=self._action_name,
             config=self._config,
             provider_name=self._provider_name,
         )
@@ -759,6 +808,8 @@ def run_app(
     ocr_runner: Callable[[], str | None] | None = None,
     from_lang: str = "auto",
     to_lang: str = "auto",
+    actions: dict[str, str] | None = None,
+    action_name: str | None = None,
     config: AppConfig | None = None,
     provider_name: str | None = None,
 ) -> int:
@@ -770,6 +821,8 @@ def run_app(
         ocr_runner=ocr_runner,
         from_lang=from_lang,
         to_lang=to_lang,
+        actions=actions,
+        action_name=action_name,
         config=config,
         provider_name=provider_name,
     )
