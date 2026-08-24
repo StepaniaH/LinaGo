@@ -107,3 +107,47 @@ def make_ocr_runner(
         return run_tesseract(png, langs)
 
     return tesseract_runner
+
+
+def capture_regions(cache_dir: Path, *, max_regions: int = 8) -> list[Path]:
+    """Interactive repeated region selection; Escape stops collecting.
+
+    The first Escape cancels outright (empty result), matching the
+    single-region flow where cancelling exits silently.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    paths: list[Path] = []
+    for index in range(max_regions):
+        try:
+            coords = subprocess.check_output(["slurp", "-d"], text=True).strip()
+        except subprocess.CalledProcessError:
+            break
+        target = cache_dir / f"region-{index}.png"
+        subprocess.run(["grim", "-g", coords, str(target)], check=True)
+        paths.append(target)
+    return paths
+
+
+def run_ocr_batch(
+    pngs: list[Path],
+    *,
+    engine: str,
+    ocr_cfg: OcrSettings,
+    get_provider,
+) -> str:
+    """OCR several screenshots and join recognized blocks with blank lines.
+
+    Returns "" when nothing was recognized anywhere; images are removed
+    immediately after their own pass.
+    """
+    parts: list[str] = []
+    for png in pngs:
+        if engine == "vision":
+            provider = get_provider(ocr_cfg.provider)
+            text = vision_ocr(provider, png)
+            png.unlink(missing_ok=True)
+        else:
+            text = run_tesseract(png, ocr_cfg.tesseract_langs)
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)

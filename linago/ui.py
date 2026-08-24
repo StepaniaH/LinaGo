@@ -40,9 +40,10 @@ from linago.lang import (  # noqa: E402
 from linago.memory import LanguageMemory  # noqa: E402
 from linago.ocr import (  # noqa: E402
     capture_region,
+    capture_regions,
     forward_to_translation,
-    make_ocr_runner,
     read_primary_selection,
+    run_ocr_batch,
 )
 from linago.paths import cache_dir  # noqa: E402
 from linago.placement import (  # noqa: E402
@@ -1094,18 +1095,27 @@ class TranslateApp(Gtk.Application):
                 translate=True,
             )
         elif kind == "ocr":
-            png = capture_region(cache_dir())
-            runner = make_ocr_runner(
-                png,
-                engine=engine,
-                ocr_cfg=self._ocr_settings or OcrSettings(),
-                get_provider=self._config.get,
-            )
+            if payload.get("multi"):
+                pngs = capture_regions(cache_dir())
+            else:
+                pngs = [capture_region(cache_dir())]
+            if not pngs:
+                return False
+            engine_now = payload.get("engine") or engine
+
+            def batch_runner(pngs=tuple(pngs), engine=engine_now):
+                return run_ocr_batch(
+                    list(pngs),
+                    engine=engine,
+                    ocr_cfg=self._ocr_settings or OcrSettings(),
+                    get_provider=self._config.get,
+                )
+
             self._open_window(
                 source_text=_("Recognizing..."),
                 translate=True,
-                pending_png=png,
-                ocr_runner=runner,
+                pending_png=pngs[0],
+                ocr_runner=batch_runner,
             )
         return False
 

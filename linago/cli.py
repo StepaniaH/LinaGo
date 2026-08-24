@@ -93,6 +93,12 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
         help=_("Capture a screen region and OCR it"),
     )
     parser.add_argument(
+        "--ocr-multi",
+        dest="ocr_multi",
+        action="store_true",
+        help=_("Capture several regions and OCR them into one text"),
+    )
+    parser.add_argument(
         "--ocr-engine",
         dest="ocr_engine",
         choices=OCR_ENGINES,
@@ -213,8 +219,8 @@ def setup_logging(*, verbose: bool) -> None:
 
 def request_from_args(args: argparse.Namespace) -> dict:
     """Serialize an invocation into a daemon socket command."""
-    if args.ocr:
-        msg: dict = {"cmd": "ocr"}
+    if args.ocr or args.ocr_multi:
+        msg: dict = {"cmd": "ocr", "multi": bool(args.ocr_multi)}
     elif args.selection:
         msg = {"cmd": "selection"}
     else:
@@ -326,24 +332,28 @@ def main(argv: list[str] | None = None) -> int:
             socket_path=socket_path,
         )
 
+    capture_requested = args.ocr or args.ocr_multi
     engine = resolve_ocr_engine(args.ocr_engine, ocr_cfg.engine)
     check_dependencies(
-        need_capture=args.ocr,
-        need_tesseract=args.ocr and engine == "tesseract",
+        need_capture=capture_requested,
+        need_tesseract=capture_requested and engine == "tesseract",
         need_selection=args.selection,
     )
 
     pending_png = None
     ocr_runner = None
-    if args.ocr:
-        pending_png = ocr_mod.capture_region(cache_dir())
+    if capture_requested:
+        if args.ocr_multi:
+            pending_list = ocr_mod.capture_regions(cache_dir())
+        else:
+            pending_list = [ocr_mod.capture_region(cache_dir())]
         source_text = _("Recognizing...")
-        ocr_runner = ocr_mod.make_ocr_runner(
-            pending_png,
-            engine=engine,
-            ocr_cfg=ocr_cfg,
-            get_provider=config.get,
-        )
+        pending_png = pending_list[0]
+
+        def ocr_runner(pngs=tuple(pending_list), engine=engine):
+            return ocr_mod.run_ocr_batch(
+                list(pngs), engine=engine, ocr_cfg=ocr_cfg, get_provider=config.get
+            )
 
     elif args.selection:
         selected = read_primary_selection()
