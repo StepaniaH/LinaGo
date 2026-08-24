@@ -169,6 +169,20 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
         action="store_true",
         help=_("Never forward to an already-running daemon"),
     )
+    parser.add_argument(
+        "--history",
+        nargs="?",
+        const="20",
+        default=None,
+        metavar="N",
+        help=_("Print the last N translations and exit (default 20)"),
+    )
+    parser.add_argument(
+        "--history-clear",
+        dest="history_clear",
+        action="store_true",
+        help=_("Delete the entire local translation history"),
+    )
     return parser
 
 
@@ -236,6 +250,30 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(verbose=args.verbose)
 
     socket_path = args.socket or default_socket_path()
+
+    if args.history_clear:
+        from linago.history import History
+
+        removed = History.open_default().clear()
+        print(_("Deleted {} entries.").format(removed))
+        return 0
+
+    if args.history is not None:
+        from datetime import datetime
+
+        from linago.history import History
+
+        entries = History.open_default().recent(max(int(args.history or 20), 1))
+        for e in entries:
+            stamp = datetime.fromtimestamp(e.ts).strftime("%Y-%m-%d %H:%M")
+            route = f"{e.source_lang}->{e.target_lang}"
+            backend = e.provider or "-"
+            if e.action:
+                backend += f"/{e.action}"
+            src = e.source_text.replace("\n", " ")[:40]
+            dst = e.translated_text.replace("\n", " ")[:40]
+            print(f"{stamp}  {route:<5}  {backend}  {src} => {dst}")
+        return 0
 
     # Transparent daemon handoff: when a resident instance answers,
     # forward the request and exit; the popup is shown over there.

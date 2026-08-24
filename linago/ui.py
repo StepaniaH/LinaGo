@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell  # noqa: E402
 
 from linago.backends import stream_completion  # noqa: E402
 from linago.config import AppConfig, OcrSettings  # noqa: E402
+from linago.history import Entry, History  # noqa: E402
 from linago.i18n import _  # noqa: E402
 from linago.lang import (  # noqa: E402
     LANGUAGES,
@@ -291,6 +293,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
         config: AppConfig | None = None,
         provider_name: str | None = None,
         completion_cb: Callable[[dict], None] | None = None,
+        history: History | None = None,
     ):
         super().__init__(application=app, title=_("Translate"))
         self._source_text = source_text
@@ -304,6 +307,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._config = config or load_app_config()
         self._provider_name = provider_name or self._config.active
         self._completion_cb = completion_cb
+        self._history = history
+        self._pinned = False
         self._closed = False
         self._cancel = threading.Event()
         self._gen = 0
@@ -371,8 +376,23 @@ class TranslateWindow(Gtk.ApplicationWindow):
             Gtk4LayerShell.set_margin(self, Gtk4LayerShell.Edge.TOP, 20)
             Gtk4LayerShell.set_margin(self, Gtk4LayerShell.Edge.RIGHT, 20)
 
+    def _on_pin_clicked(self, btn):
+        self._pinned = not self._pinned
+        tooltip = (
+            _("Unpin (Esc closes again)")
+            if self._pinned
+            else _("Pin: keep the card open (Esc ignored)")
+        )
+        btn.set_tooltip_text(tooltip)
+        css = ["pin-btn"]
+        if self._pinned:
+            css.append("pinned")
+        btn.set_css_classes(css)
+
     def _on_key_pressed(self, _controller, keyval, _keycode, _state):
         if keyval == Gdk.KEY_Escape:
+            if self._pinned:
+                return True  # pinned cards ignore Esc; ✕ still closes
             self.close()
             return True
         return False
@@ -412,11 +432,18 @@ class TranslateWindow(Gtk.ApplicationWindow):
         title.set_halign(Gtk.Align.START)
         title.set_hexpand(True)
 
+        pin_btn = Gtk.Button(label="📌")
+        pin_btn.set_css_classes(["pin-btn"])
+        pin_btn.set_tooltip_text(_("Pin: keep the card open (Esc ignored)"))
+        pin_btn.set_can_focus(False)
+        pin_btn.connect("clicked", self._on_pin_clicked)
+
         close_btn = Gtk.Button(label="✕")
         close_btn.set_css_classes(["close-btn"])
         close_btn.connect("clicked", lambda _b: self.close())
 
         header.append(title)
+        header.append(pin_btn)
         header.append(close_btn)
         root.append(header)
 
@@ -841,6 +868,21 @@ class TranslateWindow(Gtk.ApplicationWindow):
                     )
                 except Exception:
                     logging.getLogger(__name__).exception("completion callback failed")
+            if self._history is not None:
+                try:
+                    self._history.add(
+                        Entry(
+                            ts=time.time(),
+                            source_lang=pair.source,
+                            target_lang=pair.target,
+                            source_text=self._source_text,
+                            translated_text=final_text,
+                            provider=provider.name,
+                            action=action,
+                        )
+                    )
+                except Exception:
+                    logging.getLogger(__name__).exception("history write failed")
 
         translate_stream(
             provider,
@@ -892,6 +934,7 @@ class TranslateApp(Gtk.Application):
         provider_name: str | None = None,
         ocr_settings: OcrSettings | None = None,
         resident: bool = False,
+        history: History | None = None,
     ):
         super().__init__(application_id="io.github.stepaniah.linago")
         self._source_text = source_text
@@ -906,6 +949,7 @@ class TranslateApp(Gtk.Application):
         self._provider_name = provider_name or self._config.active
         self._ocr_settings = ocr_settings
         self._resident = resident
+        self._history = history
         self._window: TranslateWindow | None = None
         self.event_publisher = None  # set by run_resident()
 
@@ -950,6 +994,7 @@ class TranslateApp(Gtk.Application):
             config=self._config,
             provider_name=self._provider_name,
             completion_cb=(self.event_publisher if self.event_publisher else None),
+            history=self._history,
         )
         self._window.present()
 
@@ -1008,6 +1053,7 @@ def run_app(
     app = TranslateApp(
         source_text,
         translate,
+        history=_load_history(),
         pending_png=pending_png,
         ocr_runner=ocr_runner,
         from_lang=from_lang,
@@ -1038,6 +1084,7 @@ def run_resident(
         "",
         translate=False,
         actions=actions,
+        history=_load_history(),
         action_name=action_name,
         config=config,
         provider_name=provider_name,
@@ -1063,3 +1110,17 @@ def run_resident(
         except OSError:
             pass
     return code
+
+
+def _load_history() -> History | None:
+    """Open the local history store unless disabled via [history]."""
+    from linago.config import load_settings
+
+    settings = load_settings()
+    if not (settings.get("history") or {}).get("enabled", True):
+        return None
+    try:
+        return History.open_default()
+    except Exception:
+        logging.getLogger(__name__).warning("history unavailable", exc_info=True)
+        return None
