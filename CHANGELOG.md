@@ -4,7 +4,29 @@ All notable changes to LinaGo are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-08-24
+
+### Added
+
+- Compare mode: `[compare] providers` renders up to four backends as
+  labeled stacked panes with independent streaming; history rows and
+  daemon events carry the pane provider.
+- Web console served by the daemon on loopback (default port 8777,
+  `--web-port` / `--no-web`); `--web-only` runs it without the popup
+  stack. Token-guarded JSON API plus static single-page interface.
+- Provider management through the console: CRUD with write-only API
+  keys, per-provider reachability test, comment-preserving settings
+  writes, secrets stored with owner-only permissions.
+- Appearance presets (`dark`, `midnight`, `paper`) with accent,
+  background alpha, and font-scale overrides; `style.css` is now
+  generated from `linago/style.css.template`.
+- `--doctor` self-check with `--json` output: binaries, tesseract
+  traineddata, configuration, active provider key, reachability
+  probes, daemon socket, version.
+- Hyprland bind snippets in the console with copy support and an
+  explicit session-only apply via `hyprctl keyword`.
+
+## [0.3.0] - 2026-08-24
 
 ### Added
 

@@ -5,9 +5,9 @@ horizon. Anything shipped moves to the changelog.
 
 ## Near term
 
-- **Runtime QA pass on Hyprland** — daemon window replacement, pin
-  toggle, TTS playback, and multi-monitor placement were built against
-  unit-tested cores but need a real session before tagging.
+- **Runtime QA pass on Hyprland** — compare panes geometry, daemon
+  window replacement, pin toggle, TTS playback, and multi-monitor
+  placement need a real session before tagging.
 - **PyPI publication** — configure trusted publishing so the release
   workflow can upload wheels; AUR PKGBUILD then switches to the PyPI
   source.

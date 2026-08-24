@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v0.4.0-blue" />
+  <img alt="version" src="https://img.shields.io/badge/version-v0.5.0-blue" />
   <img alt="platform" src="https://img.shields.io/badge/platform-Hyprland%20%7C%20Wayland-lightgrey" />
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green" />
 </p>
@@ -29,7 +29,10 @@ LinaGo captures a screen region (or the primary selection), recognizes text with
 - **BYOK providers** — switch between local Ollama and OpenAI-compatible endpoints (OpenAI, DeepSeek, Groq, OpenRouter, …)
 - **Editable source** — edit the recognized text; translation refreshes after you pause typing (or press `Ctrl+Enter`)
 - **Copy buttons** — one click per pane; uses `wl-copy` so the clipboard survives after the popup closes
-- **Screen-aware placement** — anchors to the roomier side of the cursor within the active monitor, clamping height to the measured space
+- **Compare providers** — run up to four backends on the same text in labeled stacked panes
+- **Web console** — configure everything from a loopback web page served by the daemon
+- **Doctor** — `--doctor` self-checks binaries, traineddata, config, and provider reachability
+- **Theme presets** — dark / midnight / paper with accent and font-scale overrides, rendered to the popup stylesheet
 
 ## Requirements
 
@@ -78,6 +81,7 @@ pip install .          # console script: linago
 ./run.sh --translate --provider openai --text "…"
 ./run.sh --translate --from auto --to zh --text "…"
 ./run.sh --history 50                   # replay recent translations
+./run.sh --doctor                       # environment self-check (--json supported)
 ./run.sh                                # demo / help card
 ```
 
@@ -178,6 +182,42 @@ chmod 600 config/secrets.toml
 ### Languages
 
 `auto` detects English, Chinese, Japanese, Korean, and Russian from Unicode scripts; languages sharing the Latin script (French, German, Spanish) are selectable manually. `auto` on the target side picks the peer language (English pairs with Chinese, everything else defaults to English). Override with `--from` / `--to` or `TRANSLATE_FROM` / `TRANSLATE_TO`.
+
+### Compare output
+
+```toml
+[compare]
+providers = ["openai", "deepseek"]      # up to four; empty = single pane
+```
+
+When set, the popup renders one streaming pane per provider instead of a single translation. Panes restart together on language or action changes, and each completion is recorded separately in history and daemon events.
+
+### Appearance
+
+```toml
+[appearance]
+preset = "dark"             # dark | midnight | paper
+accent = ""                 # optional override for section labels
+bg_alpha = 0.94             # 0.3 – 1.0
+font_scale = 1.0            # 0.7 – 1.6
+```
+
+`style.css` is generated from `linago/style.css.template`; edit appearance through settings or the web console rather than by hand.
+
+### Web console
+
+The daemon serves a configuration page on `http://127.0.0.1:8777`
+(`--web-port`, `--no-web` to disable). `--web-only` runs the console
+without the popup stack for headless setups.
+
+First start writes a token into the cache directory
+(`~/.cache/linago/web-token`); paste it once in the browser — data
+endpoints reject requests without it. Tabs cover providers/BYOK,
+compare selection, appearance, language defaults and action templates,
+Hyprland bind snippets, and diagnostics including per-provider
+reachability tests. Provider keys are write-only: saving updates
+secrets.toml (mode 0600), and values are never sent back to the
+browser.
 
 ### History, speech, memory
 

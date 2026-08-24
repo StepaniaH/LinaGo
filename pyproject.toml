@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "linago"
-version = "0.4.0"
+version = "0.5.0"
 description = "Lightweight OCR + AI translation overlay for Hyprland / Wayland"
 readme = "README.md"
 license = { text = "MIT" }
