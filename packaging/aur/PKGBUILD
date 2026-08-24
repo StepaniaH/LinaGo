@@ -1,0 +1,37 @@
+# Maintainer: StepaniaH (https://github.com/StepaniaH)
+
+pkgname=linago
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="Lightweight OCR + AI translation overlay for Hyprland / Wayland"
+arch=(any)
+url="https://github.com/StepaniaH/LinaGo"
+license=(MIT)
+depends=(
+    gtk4
+    gtk4-layer-shell
+    python-gobject
+    python-requests
+    grim
+    slurp
+    tesseract
+    wl-clipboard
+)
+optdepends=(
+    "tesseract-data-chi_sim: Chinese OCR training data"
+    "tesseract-data-eng: English OCR training data"
+)
+makedepends=(python-build python-installer python-hatchling)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=("REPLACE_BEFORE_SUBMISSION")
+
+build() {
+    cd "$pkgname-$pkgver"
+    python -m build --wheel --no-isolation
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    python -m installer --destdir="$pkgdir" dist/*.whl
+    install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname"
+}
