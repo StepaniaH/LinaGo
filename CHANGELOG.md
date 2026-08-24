@@ -4,6 +4,23 @@ All notable changes to LinaGo are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Vision OCR streams the transcription into the source pane while the
+  model is still generating instead of waiting for the full result.
+- `--history-search QUERY` filters recorded translations
+  case-insensitively across both text columns; `--history-limit`
+  caps listed rows; `--history-export PATH` writes the selection as
+  JSON or CSV.
+
+### Changed
+
+- CI cancels superseded runs on the same ref.
+- The resident daemon converts SIGTERM and SIGINT into a clean
+  shutdown so socket and console cleanup still runs.
+
 ## [0.5.0] - 2026-08-24
 
 ### Added

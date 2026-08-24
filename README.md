@@ -21,7 +21,7 @@ LinaGo captures a screen region (or the primary selection), recognizes text with
 ## Features
 
 - **Region OCR** — `slurp` + `grim` + Tesseract (`chi_sim` + `eng`)
-- **Vision OCR** — send the screenshot straight to a multimodal model (e.g. `qwen2.5vl`) when Tesseract struggles with small or stylized text
+- **Vision OCR** — send the screenshot straight to a multimodal model (e.g. `qwen2.5vl`) when Tesseract struggles with small or stylized text; the transcription streams in live
 - **Selection mode** — translate the primary selection without taking a screenshot
 - **Streaming translation** — tokens appear as they arrive
 - **Language pairs** — auto-detects English, 中文, 日本語, 한국어, Русский; manual targets for Français, Deutsch, Español
@@ -81,6 +81,8 @@ pip install .          # console script: linago
 ./run.sh --translate --provider openai --text "…"
 ./run.sh --translate --from auto --to zh --text "…"
 ./run.sh --history 50                   # replay recent translations
+./run.sh --history-search term          # filter recorded translations
+./run.sh --history-export out.json      # dump rows (.json or .csv)
 ./run.sh --daemon                       # resident mode + web console
 ./run.sh --web-only                     # configuration console, no popup
 ./run.sh --doctor                       # environment self-check (--json supported)
