@@ -54,6 +54,7 @@ jobs:
             python3-gi python3-gi-cairo python3-requests \
             gir1.2-gtk-4.0 libgtk-4-dev \
             libgirepository1.0-dev gobject-introspection \
+            libwayland-dev wayland-protocols pkg-config \
             meson ninja-build git
       - name: Build gtk4-layer-shell
         run: |
