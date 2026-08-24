@@ -39,3 +39,39 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e .[dev]
       - run: pytest
+
+  # Imports the GTK modules on a real Linux stack so binding breakage
+  # surfaces in CI instead of only at runtime.
+  smoke-gui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK 4 and PyGObject
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi python3-gi-cairo python3-requests \
+            gir1.2-gtk-4.0 libgtk-4-dev \
+            libgirepository1.0-dev gobject-introspection \
+            meson ninja-build git
+      - name: Build gtk4-layer-shell
+        run: |
+          git clone --depth 1 --branch v1.0.4 \
+            https://github.com/wmww/gtk4-layer-shell.git /tmp/gtk4-layer-shell
+          meson setup /tmp/gtk4-layer-shell/build /tmp/gtk4-layer-shell \
+            -Ddocs=false -Dtests=false -Dexamples=false
+          ninja -C /tmp/gtk4-layer-shell/build
+          sudo ninja -C /tmp/gtk4-layer-shell/build install
+          sudo ldconfig
+          echo "GI_TYPELIB_PATH=/usr/local/lib/x86_64-linux-gnu/girepository-1.0:${GI_TYPELIB_PATH:-}" >> "$GITHUB_ENV"
+      - name: Import UI modules and validate catalogs
+        run: |
+          python3 --version
+          python3 -m linago --help > /dev/null
+          python3 - << 'EOF'
+          import linago.ui
+          from linago.i18n import install, _
+          install("zh_CN")
+          assert _("Copy") == "复制", _("Copy")
+          print("smoke-gui ok")
+          EOF
