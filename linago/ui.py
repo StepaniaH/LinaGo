@@ -46,7 +46,7 @@ from linago.ocr import (  # noqa: E402
     read_primary_selection,
     run_ocr_batch,
 )
-from linago.paths import cache_dir  # noqa: E402
+from linago.paths import cache_dir, ensure_config_dir  # noqa: E402
 from linago.placement import (  # noqa: E402
     BODY_PAD_V,
     active_monitor,
@@ -1199,6 +1199,8 @@ def run_resident(
     provider_name: str | None = None,
     socket_path: str,
     compare_names: list[str] | None = None,
+    web_port: int = 8777,
+    start_web: bool = True,
 ) -> int:
     """Serve socket requests until the process is terminated."""
     import sys as _sys
@@ -1222,6 +1224,20 @@ def run_resident(
     server = daemon.Server(socket_path, on_request=app.present_payload)
     app.event_publisher = server.events.publish
 
+    web_server = None
+    if start_web:
+        from linago import webserver
+
+        context = webserver.ConsoleContext(config_dir=ensure_config_dir())
+        token = webserver.ensure_token()
+        web_server = webserver.make_server(context, port=web_port, token=token)
+        threading.Thread(
+            target=web_server.serve_forever, name="linago-web", daemon=True
+        ).start()
+        logging.getLogger(__name__).info(
+            "web console on http://127.0.0.1:%s", web_port
+        )
+
     try:
         server.start()
     except RuntimeError as exc:
@@ -1232,6 +1248,8 @@ def run_resident(
         code = app.run(None)
     finally:
         server.stop()
+        if web_server is not None:
+            web_server.shutdown()
         try:
             os.unlink(socket_path)
         except OSError:

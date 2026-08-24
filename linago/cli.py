@@ -184,6 +184,27 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
         help=_("Print the last N translations and exit (default 20)"),
     )
     parser.add_argument(
+        "--web-port",
+        dest="web_port",
+        type=int,
+        default=8777,
+        help=_("Port for the configuration console"),
+    )
+    parser.add_argument(
+        "--no-web",
+        dest="no_web",
+        action="store_true",
+        help=_("Do not start the configuration console with the daemon"),
+    )
+    parser.add_argument(
+        "--web-only",
+        dest="web_only",
+        action="store_true",
+        help=_(
+            "Run only the configuration console, without the popup stack"
+        ),
+    )
+    parser.add_argument(
         "--doctor",
         action="store_true",
         help=_("Run environment and configuration self-checks"),
@@ -361,6 +382,17 @@ def main(argv: list[str] | None = None) -> int:
     default_action = (settings.get("app") or {}).get("action")
     action_name = args.action or (str(default_action) if default_action else None)
 
+    if args.web_only:
+        from linago import webserver
+        from linago.paths import ensure_config_dir
+
+        context = webserver.ConsoleContext(config_dir=ensure_config_dir())
+        try:
+            webserver.serve_forever(context, port=args.web_port)
+        except KeyboardInterrupt:
+            pass
+        return 0
+
     if args.daemon:
         from linago.ui import run_resident  # needs GTK + layer-shell
 
@@ -370,8 +402,10 @@ def main(argv: list[str] | None = None) -> int:
             actions=actions,
             action_name=action_name,
             provider_name=args.provider or config.active,
-            socket_path=socket_path,
+                socket_path=socket_path,
             compare_names=compare_names,
+            web_port=args.web_port,
+            start_web=not args.no_web,
         )
 
     capture_requested = args.ocr or args.ocr_multi
