@@ -12,6 +12,7 @@ import logging
 import os
 import shutil
 import sys
+from pathlib import Path
 
 from linago import ocr as ocr_mod
 from linago.config import (
@@ -214,6 +215,30 @@ def build_parser(provider_names: list[str]) -> argparse.ArgumentParser:
         help=_("Print machine-readable output where supported"),
     )
     parser.add_argument(
+        "--history-search",
+        dest="history_search",
+        type=str,
+        default=None,
+        metavar="QUERY",
+        help=_("Search recorded translations and exit"),
+    )
+    parser.add_argument(
+        "--history-limit",
+        dest="history_limit",
+        type=int,
+        default=20,
+        metavar="N",
+        help=_("Row cap for --history / --history-search (default 20)"),
+    )
+    parser.add_argument(
+        "--history-export",
+        dest="history_export",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=_("Write the selected rows to PATH as .json or .csv and exit"),
+    )
+    parser.add_argument(
         "--history-clear",
         dest="history_clear",
         action="store_true",
@@ -324,21 +349,36 @@ def main(argv: list[str] | None = None) -> int:
         print(_("Deleted {} entries.").format(removed))
         return 0
 
-    if args.history is not None:
+    if args.history is not None or args.history_search is not None:
         from datetime import datetime
 
         from linago.history import History
 
-        entries = History.open_default().recent(max(int(args.history or 20), 1))
-        for e in entries:
-            stamp = datetime.fromtimestamp(e.ts).strftime("%Y-%m-%d %H:%M")
-            route = f"{e.source_lang}->{e.target_lang}"
-            backend = e.provider or "-"
-            if e.action:
-                backend += f"/{e.action}"
-            src = e.source_text.replace("\n", " ")[:40]
-            dst = e.translated_text.replace("\n", " ")[:40]
-            print(f"{stamp}  {route:<5}  {backend}  {src} => {dst}")
+        hist = History.open_default()
+        limit = max(args.history_limit, 1)
+        if args.history_search is not None:
+            entries = hist.search(args.history_search, limit)
+        else:
+            entries = hist.recent(max(int(args.history or limit), 1))
+
+        def _fmt(entry):
+            stamp = datetime.fromtimestamp(entry.ts).strftime("%Y-%m-%d %H:%M")
+            route = f"{entry.source_lang}->{entry.target_lang}"
+            backend = entry.provider or "-"
+            if entry.action:
+                backend += f"/{entry.action}"
+            src = entry.source_text.replace("\n", " ")[:40]
+            dst = entry.translated_text.replace("\n", " ")[:40]
+            return f"{stamp}  {route:<5}  {backend}  {src} => {dst}"
+
+        for line in map(_fmt, entries):
+            print(line)
+
+        if args.history_export:
+            _write_history_export(args.history_export, entries)
+            print(
+                _("Exported {} entries to {}").format(len(entries), args.history_export)
+            )
         return 0
 
     # Transparent daemon handoff: when a resident instance answers,
@@ -472,6 +512,41 @@ def main(argv: list[str] | None = None) -> int:
         compare_names=compare_names,
         ocr_engine=engine,
     )
+
+
+def _write_history_export(path_str: str, entries: list) -> None:
+    """Write history rows as JSON (.json) or CSV (.csv)."""
+    import csv
+    import json as _json
+    from datetime import datetime
+
+    path = Path(path_str)
+    fields = (
+        "ts",
+        "source_lang",
+        "target_lang",
+        "source_text",
+        "translated_text",
+        "provider",
+        "action",
+    )
+    rows = [
+        {
+            **{k: getattr(e, k) for k in fields},
+            "ts": datetime.fromtimestamp(e.ts).isoformat(timespec="seconds"),
+        }
+        for e in entries
+    ]
+    if path.suffix.lower() == ".csv":
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+    else:
+        path.write_text(
+            _json.dumps(rows, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
 
 def run() -> None:

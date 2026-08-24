@@ -103,6 +103,24 @@ class History:
             for r in rows
         ]
 
+    def search(self, query: str, limit: int = 20) -> list[Entry]:
+        """Case-insensitive containment match over both text columns.
+
+        Filtering happens in Python rather than SQL ``LIKE`` so CJK
+        queries behave the same as Latin ones; the store is small
+        enough for a linear scan.
+        """
+        needle = query.strip().casefold()
+        if not needle:
+            return self.recent(limit)
+        matches = [
+            entry
+            for entry in self.recent(1000)
+            if needle in entry.source_text.casefold()
+            or needle in entry.translated_text.casefold()
+        ]
+        return matches[:limit]
+
     def clear(self) -> int:
         try:
             with self._lock, self._conn:
