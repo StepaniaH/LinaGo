@@ -1,0 +1,48 @@
+"""Screen capture (slurp + grim) and Tesseract OCR."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+from linago.lang import normalize_text
+
+TESSERACT_LANGS_DEFAULT = "chi_sim+eng"
+
+
+def capture_region(cache_dir: Path) -> Path:
+    """Interactive region select via slurp, then grim capture to PNG.
+
+    Exits silently when the user cancels the selection (Escape).
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    screenshot = cache_dir / "screenshot.png"
+
+    try:
+        coords = subprocess.check_output(["slurp", "-d"], text=True).strip()
+    except subprocess.CalledProcessError:
+        sys.exit(0)
+
+    subprocess.run(["grim", "-g", coords, str(screenshot)], check=True)
+    return screenshot
+
+
+def run_tesseract(png: Path, langs: str = TESSERACT_LANGS_DEFAULT) -> str | None:
+    """Run tesseract on an image file.
+
+    Returns the normalized recognized text, "" when nothing was
+    recognized, or None when tesseract failed. The image is removed
+    either way.
+    """
+    try:
+        result = subprocess.check_output(
+            ["tesseract", str(png), "-", "-l", langs],
+            text=True,
+        ).strip()
+    except (subprocess.CalledProcessError, OSError):
+        png.unlink(missing_ok=True)
+        return None
+
+    png.unlink(missing_ok=True)
+    return normalize_text(result)

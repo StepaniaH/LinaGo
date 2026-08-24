@@ -1,9 +1,22 @@
 #!/usr/bin/env bash
-# run.sh — wrapper that fixes gtk4-layer-shell linking order on Arch.
-# All state stays inside this project folder.
+# run.sh — bootstrap a venv and launch LinaGo from a checkout.
+#
+# gtk4-layer-shell is preloaded where the library exists because some
+# distros ship the GI binding without linking it into PyGObject's
+# lookup path.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
-export LD_PRELOAD="/usr/lib/libgtk4-layer-shell.so${LD_PRELOAD:+:$LD_PRELOAD}"
+cd "$PROJECT_ROOT"
 
-exec "$PROJECT_ROOT/.venv/bin/python3" "$PROJECT_ROOT/translate_popup.py" "$@"
+PYTHON="${PYTHON:-python3}"
+if [ ! -x .venv/bin/python ]; then
+    "$PYTHON" -m venv --system-site-packages .venv
+fi
+. .venv/bin/activate
+
+if [ -e /usr/lib/libgtk4-layer-shell.so ]; then
+    export LD_PRELOAD="/usr/lib/libgtk4-layer-shell.so${LD_PRELOAD:+:$LD_PRELOAD}"
+fi
+
+exec python -m linago "$@"

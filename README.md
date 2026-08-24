@@ -112,14 +112,12 @@ model = "gpt-4o-mini"
 api_key_env = "OPENAI_API_KEY"
 ```
 
-Add any OpenAI-compatible endpoint with `type = "openai"`. Switch at runtime via:
+Add any OpenAI-compatible endpoint with `type = "openai"`. Switch the active provider at runtime via:
 
 - `provider = "…"` in settings
 - `TRANSLATE_PROVIDER` / `TRANSLATE_MODEL`
 - CLI `--provider`
 - the footer dropdown
-
-Legacy env vars still work for Ollama: `TRANSLATE_OLLAMA_URL`, `TRANSLATE_OLLAMA_MODEL`.
 
 ### API keys (BYOK) — `config/secrets.toml`
 
@@ -148,21 +146,27 @@ Keys are matched by provider name. Alternatively set the env var named in `api_k
 
 ```
 LinaGo/
-├── assets/LinaGo.png          # project icon
+├── assets/LinaGo.png            # project icon
 ├── config/
-│   ├── settings.toml          # providers & defaults
-│   ├── secrets.toml.example   # API key template
-│   └── style.css              # popup styling
-├── providers.py               # Ollama + OpenAI-compatible streaming
-├── translate_popup.py         # GTK4 layer-shell UI
-├── run.sh                     # launcher
+│   ├── settings.toml            # providers, OCR engine & defaults
+│   ├── secrets.toml.example     # API key template
+│   └── style.css                # popup styling
+├── linago/
+│   ├── lang.py                  # language table, detection, prompts
+│   ├── placement.py             # hyprctl geometry + popup placement math
+│   ├── ocr.py                   # slurp/grim capture + tesseract
+│   ├── config.py                # provider/settings loading
+│   ├── backends.py              # streaming translation backends
+│   ├── ui.py                    # GTK4 layer-shell popup
+│   └── cli.py                   # argument parsing & launch
+├── run.sh                       # launcher
 └── README.md
 ```
 
 ## Privacy
 
 - API keys belong only in `config/secrets.toml` (ignored) or environment variables.
-- Screenshots are written under `.cache/` (ignored) and deleted after OCR.
+- Screenshots go to the system cache directory (`~/.cache/linago`) and are deleted after OCR.
 - No telemetry; translation traffic goes only to the backend you configure.
 
 ## License

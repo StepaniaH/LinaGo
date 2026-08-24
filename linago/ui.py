@@ -1,320 +1,56 @@
-#!/usr/bin/env python3
-"""translate-popup — OCR + translate card on GTK4 layer-shell.
+"""GTK4 layer-shell popup UI.
 
-Usage:
-    ./run.sh --ocr                          screenshot → OCR → popup
-    ./run.sh --ocr --translate              screenshot → OCR → translate → popup
-    ./run.sh --translate --text "hello"     translate given text → popup
-    ./run.sh --translate --provider openai --text "…"
-    ./run.sh --translate --from auto --to zh --text "…"
-    ./run.sh --text "hello"                 show given text only
-    ./run.sh                                demo mode
-
-Providers are configured in config/settings.toml (Ollama + OpenAI-compatible
-BYOK). API keys go in config/secrets.toml (see secrets.toml.example).
+This module needs GTK 4 and gtk4-layer-shell at import time; the CLI
+imports it lazily so ``--help``, dependency checks, and tests work on
+machines without a Wayland stack.
 """
 
 from __future__ import annotations
 
-import argparse
-import json
-import os
-import re
 import shutil
 import subprocess
-import sys
 import threading
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Gtk, Gtk4LayerShell, GLib, Gdk
+from gi.repository import Gtk, Gtk4LayerShell, GLib, Gdk  # noqa: E402
 
-from providers import AppConfig, Provider, load_config, stream_completion
-
-# ── constants ────────────────────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parent
-CONFIG_DIR = PROJECT_ROOT / "config"
-CACHE_DIR = PROJECT_ROOT / ".cache"
+from linago.backends import stream_completion  # noqa: E402
+from linago.config import AppConfig  # noqa: E402
+from linago.lang import (  # noqa: E402
+    LANGUAGES,
+    SOURCE_CHOICES,
+    TARGET_CHOICES,
+    LangPair,
+    build_prompt,
+    choice_label,
+    normalize_text,
+    opposite_lang,
+    resolve_pair,
+)
+from linago.placement import (  # noqa: E402
+    active_monitor,
+    compute_placement,
+    compute_section_caps,
+    get_cursor_position,
+)
 
 SOURCE_EDIT_DEBOUNCE_MS = 700  # wait for typing to settle before retranslating
 
-# Upper bounds for each text section's scroll height (px), before the
-# available-screen-space clamp in compute_section_caps() kicks in.
-SOURCE_MAX_H = 280
-TRANSLATION_MAX_H = 500
 
-# Rough chrome heights (px) used only to estimate how much vertical room
-# the popup's non-text chrome will consume, so we can reserve the rest of
-# the available screen space for the text sections without overflowing.
-HEADER_H = 56
-FOOTER_H = 40
-BODY_PAD_V = 28
-SECTION_LABEL_H = 22
-LANG_BAR_H = 46
-SEPARATOR_H = 24
-
-# Bob-like language pair. Codes used in CLI / dropdowns.
-# "auto" is virtual: resolve from text (CJK vs Latin).
-LANGUAGES: dict[str, dict[str, str]] = {
-    "en": {
-        "label": "English",
-        "short": "英",
-        "prompt": "English",
-    },
-    "zh": {
-        "label": "中文",
-        "short": "中",
-        "prompt": "Chinese (Simplified)",
-    },
-}
-SOURCE_CHOICES = ("auto", *LANGUAGES.keys())
-TARGET_CHOICES = ("auto", *LANGUAGES.keys())
-
-REQUIRED_BINS = {
-    "ocr": ("slurp", "grim", "tesseract"),
-    "position": ("hyprctl",),
-}
-
-_CJK_RE = re.compile(
-    r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff"
-    r"\U00020000-\U0002a6df]"
-)
-_LATIN_RE = re.compile(r"[A-Za-z]")
-_BLANK_LINES_RE = re.compile(r"\n[ \t]*\n+")
-
-
-# ── helpers ──────────────────────────────────────────────────────────────────
 def _emit(callback, *args):
     """Trampoline for GLib.idle_add — returns False so it only fires once."""
     callback(*args)
     return False
 
 
-def normalize_text(text: str) -> str:
-    """Collapse OCR/LLM blank-line artifacts into single line breaks.
-
-    Tesseract emits a blank line after almost every recognized line
-    (each short UI string is treated as its own paragraph block), and
-    some models pepper their output with extra blank lines. Neither is
-    useful in a compact popup, so collapse any run of blank lines to a
-    single newline.
-    """
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = _BLANK_LINES_RE.sub("\n", text)
-    return text.strip()
-
-
-def check_dependencies(need_ocr: bool) -> None:
-    """Exit with a clear message if required system binaries are missing."""
-    missing: list[str] = []
-    for group in (("position",), ("ocr",) if need_ocr else ()):
-        for name in group:
-            for binary in REQUIRED_BINS[name]:
-                if shutil.which(binary) is None:
-                    missing.append(binary)
-    seen: set[str] = set()
-    unique = [b for b in missing if not (b in seen or seen.add(b))]
-    if unique:
-        print(
-            "缺少依赖命令: " + ", ".join(unique) + "\n"
-            "请安装对应包后再运行（Arch 示例: grim slurp tesseract "
-            "tesseract-data-chi_sim tesseract-data-eng hyprland）。",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-
-# ── language detection / resolution ──────────────────────────────────────────
-def detect_lang(text: str) -> str:
-    """Heuristic: more CJK → zh, else en (Bob-style auto for en↔zh)."""
-    cjk = len(_CJK_RE.findall(text))
-    latin = len(_LATIN_RE.findall(text))
-    if cjk == 0 and latin == 0:
-        return "en"
-    return "zh" if cjk > latin else "en"
-
-
-def opposite_lang(code: str) -> str:
-    return "zh" if code == "en" else "en"
-
-
-@dataclass(frozen=True)
-class LangPair:
-    source: str          # resolved concrete code (never auto)
-    target: str          # resolved concrete code (never auto)
-    detected: str        # detect_lang() result
-    source_choice: str   # user selection (may be auto)
-    target_choice: str   # user selection (may be auto)
-
-
-def resolve_pair(text: str, source_choice: str, target_choice: str) -> LangPair:
-    """Resolve auto selections into a concrete source→target pair."""
-    detected = detect_lang(text)
-    source = detected if source_choice == "auto" else source_choice
-    if target_choice == "auto":
-        target = opposite_lang(source)
-    else:
-        target = target_choice
-    if source == target:
-        target = opposite_lang(source)
-    return LangPair(
-        source=source,
-        target=target,
-        detected=detected,
-        source_choice=source_choice,
-        target_choice=target_choice,
-    )
-
-
-def choice_label(code: str, *, detected: str | None = None) -> str:
-    if code == "auto":
-        if detected and detected in LANGUAGES:
-            return f"自动 · {LANGUAGES[detected]['short']}"
-        return "自动"
-    return LANGUAGES[code]["label"]
-
-
-def build_prompt(text: str, pair: LangPair) -> str:
-    src = LANGUAGES[pair.source]["prompt"]
-    tgt = LANGUAGES[pair.target]["prompt"]
-    return (
-        "You are a professional translator. Translate the following text "
-        f"from {src} to {tgt}. Output ONLY the translation, nothing else — "
-        "no explanations, no notes, no quotation marks.\n\n"
-        + text
-    )
-
-
-# ── cursor position ──────────────────────────────────────────────────────────
-def get_cursor_position() -> tuple[int, int]:
-    """Return (x, y) of the mouse cursor via hyprctl."""
-    out = subprocess.check_output(["hyprctl", "cursorpos"], text=True).strip()
-    x_str, y_str = out.split(",")
-    return int(x_str.strip()), int(y_str.strip())
-
-
-def get_screen_size() -> tuple[int, int]:
-    """Return (width, height) of the active monitor via hyprctl."""
-    raw = subprocess.check_output(["hyprctl", "monitors", "-j"], text=True)
-    monitors = json.loads(raw)
-    for m in monitors:
-        if m.get("focused"):
-            return m["width"], m["height"]
-    if monitors:
-        return monitors[0]["width"], monitors[0]["height"]
-    return 1920, 1080
-
-
-@dataclass(frozen=True)
-class Placement:
-    horizontal: str  # "right" | "left" — which side of the cursor we grow
-    vertical: str    # "below" | "above" — which side of the cursor we grow
-    left_margin: int
-    top_margin: int    # only meaningful when vertical == "below"
-    bottom_margin: int  # only meaningful when vertical == "above"
-    avail_h: int        # usable vertical space in the chosen direction
-
-
-def compute_placement(
-    cursor_x: int,
-    cursor_y: int,
-    win_w: int = 480,
-    gap: int = 12,
-) -> Placement:
-    """Decide which corner of the cursor to grow the popup into.
-
-    Rather than guessing a fixed popup height and flipping if it would
-    overflow (fragile once content can grow after the fact — e.g. a long
-    translation), anchor to whichever vertical direction has more room and
-    let the caller clamp content height to what's actually available. The
-    layer-shell anchor keeps that edge pinned as the popup grows/shrinks.
-    """
-    sw, sh = get_screen_size()
-
-    left = cursor_x + gap
-    horizontal = "right"
-    if left + win_w > sw:
-        horizontal = "left"
-        left = max(gap, cursor_x - win_w - gap)
-
-    space_below = max(sh - cursor_y - gap, 0)
-    space_above = max(cursor_y - gap, 0)
-    if space_below >= space_above:
-        vertical = "below"
-        avail_h = space_below
-    else:
-        vertical = "above"
-        avail_h = space_above
-    avail_h = max(avail_h, 160)  # keep a usable minimum even near an edge
-
-    return Placement(
-        horizontal=horizontal,
-        vertical=vertical,
-        left_margin=left,
-        top_margin=cursor_y + gap,
-        bottom_margin=max(gap, sh - cursor_y + gap),
-        avail_h=avail_h,
-    )
-
-
-def compute_section_caps(avail_h: int, translate: bool) -> tuple[int, int]:
-    """Split available vertical space between the source/translation
-    scroll areas so the whole popup fits without overflowing the screen.
-
-    Returns (source_max_h, translation_max_h); translation_max_h is 0 when
-    not in translate mode.
-    """
-    chrome = HEADER_H + FOOTER_H + BODY_PAD_V + SECTION_LABEL_H
-    if translate:
-        chrome += LANG_BAR_H + SEPARATOR_H + SECTION_LABEL_H
-
-    budget = max(avail_h - chrome, 120)
-
-    if not translate:
-        return min(SOURCE_MAX_H, budget), 0
-
-    source_cap = max(min(SOURCE_MAX_H, int(budget * 0.4)), 60)
-    translation_cap = max(min(TRANSLATION_MAX_H, budget - source_cap), 80)
-    return source_cap, translation_cap
-
-
-def capture_region() -> Path:
-    """Interactive region select → grim screenshot. Returns PNG path."""
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    screenshot = CACHE_DIR / "screenshot.png"
-
-    try:
-        coords = subprocess.check_output(["slurp", "-d"], text=True).strip()
-    except subprocess.CalledProcessError:
-        sys.exit(0)  # user cancelled (Escape)
-
-    subprocess.run(["grim", "-g", coords, str(screenshot)], check=True)
-    return screenshot
-
-
-def ocr_image(screenshot: Path) -> str:
-    """Run tesseract on an image path. Returns recognized text."""
-    try:
-        result = subprocess.check_output(
-            ["tesseract", str(screenshot), "-", "-l", "chi_sim+eng"],
-            text=True,
-        ).strip()
-    except subprocess.CalledProcessError:
-        return "[OCR 失败]"
-    finally:
-        screenshot.unlink(missing_ok=True)
-
-    result = normalize_text(result)
-    return result if result else "（未识别到文字）"
-
-
 # ── translation (streaming) ──────────────────────────────────────────────────
 def translate_stream(
-    provider: Provider,
+    provider,
     text: str,
     pair: LangPair,
     on_token,
@@ -509,7 +245,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         app: Gtk.Application,
         source_text: str,
         translate: bool = False,
-        pending_ocr: Path | None = None,
+        pending_png: Path | None = None,
+        ocr_runner: Callable[[], str | None] | None = None,
         from_lang: str = "auto",
         to_lang: str = "auto",
         config: AppConfig | None = None,
@@ -518,10 +255,11 @@ class TranslateWindow(Gtk.ApplicationWindow):
         super().__init__(application=app, title="翻译")
         self._source_text = source_text
         self._translate = translate
-        self._pending_ocr = pending_ocr
+        self._pending_png = pending_png
+        self._ocr_runner = ocr_runner
         self._from_lang = from_lang
         self._to_lang = to_lang
-        self._config = config or load_config()
+        self._config = config or load_app_config()
         self._provider_name = provider_name or self._config.active
         self._closed = False
         self._cancel = threading.Event()
@@ -536,8 +274,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._to_dropdown: Gtk.DropDown | None = None
         self._provider_dropdown: Gtk.DropDown | None = None
         self._footer_label: Gtk.Label | None = None
-        self._source_max_h = SOURCE_MAX_H
-        self._translation_max_h = TRANSLATION_MAX_H
+        self._source_max_h = 280
+        self._translation_max_h = 500
 
         self._setup_layer_shell()
 
@@ -548,7 +286,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
 
         self._build_ui()
 
-    def _provider(self) -> Provider:
+    def _provider(self):
         return self._config.get(self._provider_name)
 
     def _setup_layer_shell(self):
@@ -559,8 +297,10 @@ class TranslateWindow(Gtk.ApplicationWindow):
         )
 
         try:
-            cx, cy = get_cursor_position()
-            placement = compute_placement(cx, cy)
+            pos = get_cursor_position()
+            if pos is None:
+                raise RuntimeError("cursor position unavailable")
+            placement = compute_placement(pos[0], pos[1], active_monitor())
 
             Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.LEFT, True)
             Gtk4LayerShell.set_margin(
@@ -607,8 +347,8 @@ class TranslateWindow(Gtk.ApplicationWindow):
         return resolve_pair(self._source_text, self._from_lang, self._to_lang)
 
     def _build_ui(self):
-        css_path = CONFIG_DIR / "style.css"
-        if css_path.exists():
+        css_path = _find_style_css()
+        if css_path is not None:
             css_provider = Gtk.CssProvider()
             css_provider.load_from_path(str(css_path))
             Gtk.StyleContext.add_provider_for_display(
@@ -666,7 +406,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
             sep.set_css_classes(["separator"])
             body.append(sep)
 
-            waiting = "等待识别..." if self._pending_ocr else "翻译中..."
+            waiting = "等待识别..." if self._pending_png else "翻译中..."
             self._translation_section = TextSection(
                 body,
                 section="译文",
@@ -713,7 +453,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
             footer_box.append(footer_label)
         root.append(footer_box)
 
-        if self._pending_ocr:
+        if self._pending_png:
             GLib.idle_add(self._start_ocr)
         elif self._translate:
             GLib.idle_add(self._start_translation)
@@ -757,22 +497,23 @@ class TranslateWindow(Gtk.ApplicationWindow):
         if self._translation_section:
             tgt_name = LANGUAGES[pair.target]["label"]
             self._translation_section.set_section_label(f"译文 · {tgt_name}")
-        # Refresh "自动 · 英/中" labels on dropdowns without firing change handlers
+        # Refresh "自动 · 英/中" labels on dropdowns without firing handlers
         self._updating_lang_ui = True
         try:
-            if self._from_dropdown is not None:
-                model = self._from_dropdown.get_model()
+            for dropdown, choices, detected_for in (
+                (self._from_dropdown, SOURCE_CHOICES, pair.detected),
+                (
+                    self._to_dropdown,
+                    TARGET_CHOICES,
+                    opposite_lang(pair.source),
+                ),
+            ):
+                if dropdown is None:
+                    continue
+                model = dropdown.get_model()
                 if isinstance(model, Gtk.StringList):
-                    for i, code in enumerate(SOURCE_CHOICES):
-                        det = pair.detected if code == "auto" else None
-                        model.splice(i, 1, [choice_label(code, detected=det)])
-            if self._to_dropdown is not None:
-                model = self._to_dropdown.get_model()
-                if isinstance(model, Gtk.StringList):
-                    for i, code in enumerate(TARGET_CHOICES):
-                        det = (
-                            opposite_lang(pair.source) if code == "auto" else None
-                        )
+                    for i, code in enumerate(choices):
+                        det = detected_for if code == "auto" else None
                         model.splice(i, 1, [choice_label(code, detected=det)])
         finally:
             self._updating_lang_ui = False
@@ -811,7 +552,6 @@ class TranslateWindow(Gtk.ApplicationWindow):
         new_to = (
             pair.source if self._to_lang == "auto" else self._from_lang
         )
-        # If both were concrete, simple swap of choices
         if self._from_lang != "auto" and self._to_lang != "auto":
             new_from, new_to = self._to_lang, self._from_lang
 
@@ -835,7 +575,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
 
     def _on_lang_pair_changed(self):
         self._refresh_pair_labels()
-        if self._pending_ocr:
+        if self._pending_png:
             return  # wait until OCR finishes
         if self._translate and not self._is_placeholder_source():
             self._restart_translation()
@@ -859,7 +599,7 @@ class TranslateWindow(Gtk.ApplicationWindow):
             return
         self._provider_name = new
         self._refresh_provider_footer()
-        if self._pending_ocr:
+        if self._pending_png:
             return
         if self._translate and not self._is_placeholder_source():
             self._restart_translation()
@@ -898,29 +638,33 @@ class TranslateWindow(Gtk.ApplicationWindow):
             return False
 
         self._source_text = text
-        self._pending_ocr = None
+        self._pending_png = None
         self._refresh_pair_labels()
         if self._translate:
             self._restart_translation()
         return False
 
     def _start_ocr(self):
-        path = self._pending_ocr
-        assert path is not None
+        png = self._pending_png
+        assert png is not None
 
         def _worker():
-            text = ocr_image(path)
+            text = self._ocr_runner() if self._ocr_runner else ""
             if not self._closed:
                 GLib.idle_add(_emit, self._on_ocr_done, text)
 
         threading.Thread(target=_worker, daemon=True).start()
         return False
 
-    def _on_ocr_done(self, text: str):
+    def _on_ocr_done(self, text):
         if self._closed:
             return
+        if text is None:
+            text = "[OCR 失败]"
+        elif not text:
+            text = "（未识别到文字）"
         self._source_text = text
-        self._pending_ocr = None
+        self._pending_png = None
         if self._source_section:
             self._updating_source_ui = True
             try:
@@ -962,25 +706,44 @@ class TranslateWindow(Gtk.ApplicationWindow):
         self._translation_section.set_text(full_result)
 
 
+def load_app_config() -> AppConfig:
+    from linago.config import load_config, load_settings
+
+    return load_config(load_settings())
+
+
+def _find_style_css() -> Path | None:
+    """style.css lives beside settings.toml when a config dir exists."""
+    from linago.paths import find_config_dir
+
+    config_dir = find_config_dir()
+    if config_dir is None:
+        return None
+    path = config_dir / "style.css"
+    return path if path.exists() else None
+
+
 # ── application ──────────────────────────────────────────────────────────────
 class TranslateApp(Gtk.Application):
     def __init__(
         self,
         source_text: str,
         translate: bool,
-        pending_ocr: Path | None = None,
+        pending_png: Path | None = None,
+        ocr_runner: Callable[[], str | None] | None = None,
         from_lang: str = "auto",
         to_lang: str = "auto",
         config: AppConfig | None = None,
         provider_name: str | None = None,
     ):
-        super().__init__(application_id="com.translate.tool")
+        super().__init__(application_id="io.github.stepaniah.linago")
         self._source_text = source_text
         self._translate = translate
-        self._pending_ocr = pending_ocr
+        self._pending_png = pending_png
+        self._ocr_runner = ocr_runner
         self._from_lang = from_lang
         self._to_lang = to_lang
-        self._config = config or load_config()
+        self._config = config or load_app_config()
         self._provider_name = provider_name or self._config.active
 
     def do_activate(self):
@@ -988,7 +751,8 @@ class TranslateApp(Gtk.Application):
             self,
             self._source_text,
             self._translate,
-            pending_ocr=self._pending_ocr,
+            pending_png=self._pending_png,
+            ocr_runner=self._ocr_runner,
             from_lang=self._from_lang,
             to_lang=self._to_lang,
             config=self._config,
@@ -997,82 +761,26 @@ class TranslateApp(Gtk.Application):
         win.present()
 
 
-# ── cli ──────────────────────────────────────────────────────────────────────
-def main():
-    if CACHE_DIR.exists():
-        for f in CACHE_DIR.iterdir():
-            f.unlink(missing_ok=True)
-
-    config = load_config()
-    lang_choices = list(SOURCE_CHOICES)
-    provider_choices = config.names()
-
-    parser = argparse.ArgumentParser(description="翻译弹窗")
-    parser.add_argument("--ocr", action="store_true", help="截图 OCR 识别文字")
-    parser.add_argument(
-        "--translate", action="store_true", help="调用当前 provider 翻译"
-    )
-    parser.add_argument("--text", type=str, default=None, help="直接指定文本")
-    parser.add_argument(
-        "--from",
-        dest="from_lang",
-        choices=lang_choices,
-        default=os.environ.get("TRANSLATE_FROM", "auto"),
-        help="源语言（默认 auto：按中英字符占比判定）",
-    )
-    parser.add_argument(
-        "--to",
-        dest="to_lang",
-        choices=lang_choices,
-        default=os.environ.get("TRANSLATE_TO", "auto"),
-        help="目标语言（默认 auto：取源语言的对面）",
-    )
-    parser.add_argument(
-        "--provider",
-        choices=provider_choices,
-        default=None,
-        help=(
-            "翻译后端（默认读 config/settings.toml 的 [app].provider；"
-            f"可用: {', '.join(provider_choices)}）"
-        ),
-    )
-    args = parser.parse_args()
-
-    check_dependencies(need_ocr=args.ocr)
-
-    pending_ocr: Path | None = None
-    if args.ocr:
-        screenshot = capture_region()
-        source_text = "识别中..."
-        pending_ocr = screenshot
-    elif args.text:
-        source_text = normalize_text(args.text)
-    else:
-        active = config.get(args.provider)
-        source_text = (
-            "The quick brown fox jumps over the lazy dog.\n\n"
-            "使用方法：\n"
-            "  ./run.sh --ocr --translate\n"
-            "  ./run.sh --translate --text …\n"
-            "  ./run.sh --translate --provider ollama --text …\n"
-            "  ./run.sh --translate --provider openai --text …\n\n"
-            f"当前后端：{active.display}（{active.type}）\n"
-            "配置：config/settings.toml · 密钥：config/secrets.toml\n"
-            "环境变量：TRANSLATE_PROVIDER / TRANSLATE_MODEL / "
-            "TRANSLATE_OLLAMA_URL / TRANSLATE_FROM / TRANSLATE_TO"
-        )
-
+def run_app(
+    source_text: str,
+    *,
+    translate: bool,
+    pending_png: Path | None = None,
+    ocr_runner: Callable[[], str | None] | None = None,
+    from_lang: str = "auto",
+    to_lang: str = "auto",
+    config: AppConfig | None = None,
+    provider_name: str | None = None,
+) -> int:
+    """Create the popup application and run its main loop."""
     app = TranslateApp(
         source_text,
-        translate=args.translate,
-        pending_ocr=pending_ocr,
-        from_lang=args.from_lang,
-        to_lang=args.to_lang,
+        translate,
+        pending_png=pending_png,
+        ocr_runner=ocr_runner,
+        from_lang=from_lang,
+        to_lang=to_lang,
         config=config,
-        provider_name=args.provider or config.active,
+        provider_name=provider_name,
     )
-    return app.run()
-
-
-if __name__ == "__main__":
-    main()
+    return app.run(None)
